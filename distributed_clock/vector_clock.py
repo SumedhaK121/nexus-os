@@ -8,13 +8,23 @@ Concept: Vector Clocks (Fidge 1988, Mattern 1989), Version Vectors in DynamoDB /
 import threading
 
 
+REL_BEFORE = "BEFORE"
+REL_AFTER = "AFTER"
+REL_EQUAL = "EQUAL"
+REL_CONCURRENT = "CONCURRENT"
+BEFORE = REL_BEFORE
+AFTER = REL_AFTER
+EQUAL = REL_EQUAL
+CONCURRENT = REL_CONCURRENT
+
+
 class VectorClock:
     """Thread-safe Vector Clock representing causal history across distributed processes."""
 
-    REL_BEFORE = "BEFORE"
-    REL_AFTER = "AFTER"
-    REL_EQUAL = "EQUAL"
-    REL_CONCURRENT = "CONCURRENT"
+    REL_BEFORE = REL_BEFORE
+    REL_AFTER = REL_AFTER
+    REL_EQUAL = REL_EQUAL
+    REL_CONCURRENT = REL_CONCURRENT
 
     def __init__(self, node_id=None, initial=None):
         self.node_id = str(node_id) if node_id is not None else None
