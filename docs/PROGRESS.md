@@ -503,5 +503,59 @@
   python app.py
   # In web dashboard, navigate to Docker view to inspect live container telemetry and execute chaos actions.
   ```
-- **Known Gaps**: End-to-end integration scenario ("A Day in the Lab"), syllabus practicals mapping, real-life mapping, and v1.0 release to be implemented in Phase 10.
+- **Known Gaps**: None. All Phase 9 milestones completed.
+
+---
+
+## Phase 10: Demo, Integration Test, Documentation & Release
+- **Branch**: `phase-10-release` (merged into `main`)
+- **Tag**: `v1.0`
+- **Completed**: Yes
+- **What Was Done**:
+  1. Implemented canonical 8-scene automated cluster walkthrough in `demo/lab_day.py`:
+     - **Scene 1**: Boot in-process cluster with 3 nodes having distinct CPU/RAM/IO limits; aggregates dynamic hardware capacity vector `[CPU: 8, RAM: 1024MB, I/O: 7]`.
+     - **Scene 2**: Upload 140 KB dataset to DFS across 3 blocks with 2x pipelined replication and 100% SHA-256 integrity verification.
+     - **Scene 3 & 4**: Evaluate 15-job heavy-tailed campus workload trace across FCFS, SJF, Priority, Round Robin, SRTF, and Priority+Aging schedulers.
+     - **Scene 5**: Resource deadlock demonstration comparing Banker's admission control (safe request granted vs unsafe denied) vs Banker OFF circular wait with WFG cycle detection and victim recovery.
+     - **Scene 6**: Collaborative file synchronization with named distributed lock leases and Dropbox-Lite offline concurrent edit conflict resolution producing conflicted copies.
+     - **Scene 7**: Chaos fault injection with sudden crash on `node-1`, automatic job migration to `node-2`, background block re-replication self-healing, and capacity restoration upon node recovery.
+     - **Scene 8**: Executive curriculum verification summary report.
+  2. Implemented comprehensive end-to-end integration test suite in `tests/test_integration.py`:
+     - `test_end_to_end_cluster_lifecycle`: Full cluster pipeline, storage, locking, concurrent sync, node failure, job migration, and self-healing.
+     - `test_cpu_scheduling_optimality_invariants`: Verifies mathematical invariants (SJF/SRTF average waiting time $\le$ FCFS).
+     - `test_banker_algorithm_safety_invariants`: Verifies Banker's safe sequence discovery and denial of unsafe states.
+     - Total test suite now stands at **76 passing tests** across 10 test modules.
+  3. Authored complete OSDS curriculum documentation:
+     - `docs/REAL_LIFE_MAPPING.md`: Comprehensive mapping linking textbook concepts to NEXUS-OS implementations and production systems (Slurm, HDFS, Dropbox, Chubby, Linux Cgroups).
+     - `docs/PRACTICALS_MAP.md`: Alignment matrix mapping university syllabus practicals 1 through 12 to source code and interactive dashboards, complete with viva interview Q&A.
+     - `docs/LIMITATIONS.md`: Transparent discussion of engineering trade-offs (SPoF, SQLite catalog, in-process networking, vector clock growth) and future roadmap (Raft consensus, Reed-Solomon, FUSE driver).
+  4. Authored 4 in-depth industrial case studies:
+     - `docs/case_studies/slurm_scheduling.md` (Slurm Workload Manager)
+     - `docs/case_studies/hdfs_replication.md` (Apache Hadoop HDFS)
+     - `docs/case_studies/dropbox_sync.md` (Dropbox Architecture)
+     - `docs/case_studies/chubby_locks.md` (Google Chubby Lock Service)
+  5. Completely rewrote `README.md` into a polished, comprehensive project guide with architecture diagrams, quick-start instructions, benchmark tables, and CLI tool documentation.
+  6. Verified zero regressions: Full test suite passing, `demo/lab_day.py` passing, and `python app.py` smoke test verified at `http://localhost:8080`.
+  7. Final Release: Merged `phase-10-release` into `main` and tagged `v1.0`.
+- **Files Changed/Created**:
+  - `demo/lab_day.py`
+  - `tests/test_integration.py`
+  - `distributed_clock/vector_clock.py`
+  - `README.md`
+  - `docs/REAL_LIFE_MAPPING.md`
+  - `docs/PRACTICALS_MAP.md`
+  - `docs/LIMITATIONS.md`
+  - `docs/case_studies/slurm_scheduling.md`
+  - `docs/case_studies/hdfs_replication.md`
+  - `docs/case_studies/dropbox_sync.md`
+  - `docs/case_studies/chubby_locks.md`
+  - `docs/PROGRESS.md`
+- **How to Try It**:
+  ```bash
+  python -m unittest discover -s tests
+  python demo/lab_day.py
+  python app.py
+  ```
+- **Known Gaps**: None. All phases 0 through 10 fully completed, tested, documented, and released as v1.0.
+
 
