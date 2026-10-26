@@ -186,3 +186,57 @@
   # In web dashboard, navigate to File Manager to explore the DFS directory tree, block layouts, and scrubber.
   ```
 - **Known Gaps**: Per-node block caching (LRU/FIFO/Optimal trace replay) and local synchronization primitives to be implemented in Phase 4.
+
+---
+
+## Phase 4: Cache (Page Replacement for Real) & Local Synchronization
+- **Branch**: `phase-4-cache-sync` (merged into `main`)
+- **Tag**: `phase-4-complete`
+- **Completed**: Yes
+- **What Was Done**:
+  1. Implemented per-node block caching in `nodes/node_cache.py`:
+     - Configurable eviction policies (`LRU`, `FIFO`, `OPTIMAL`) and capacity (`NEXUS_CACHE_CAP`).
+     - Persistent access trace logging to `logs/access_trace.jsonl` recording timestamps, block IDs, operations, hits, and policy.
+     - Integrated into `nodes/block_store.py`: `get_block` checks in-memory cache first returning immediate hits, while `delete_block` and `corrupt_block` properly invalidate cached entries.
+     - Node RPC endpoints `CacheStats` and `CacheConfig`.
+  2. Implemented cache replay and Belady's Anomaly demonstration in `coordinator/file_manager/page_replacement.py`:
+     - Canonical Belady reference string `[1, 2, 3, 4, 1, 2, 5, 1, 2, 3, 4, 5]`.
+     - Demonstrated that FIFO page faults increase from 9 (3 frames) to 10 (4 frames), proving Belady's Anomaly.
+     - Proved that stack algorithms (LRU, Optimal) satisfy Mattson's inclusion property and page faults monotonically decrease (LRU: 10 -> 8; Optimal: 7 -> 6).
+     - Handler `CACHE_REPLAY` replaying recorded access traces across multiple frame sizes.
+  3. Implemented advanced local synchronization primitives in `coordinator/synchronization/`:
+     - `readers_writers.py`: Configurable `RWLock` with Reader-Preference (Courtois 1st problem, demonstrating writer starvation), Writer-Preference (Courtois 2nd problem, preventing writer starvation), and Fair FIFO queueing. Added `demonstrate_starvation()`.
+     - `primitives.py`: `CountingSemaphore` for in-flight transfer rate limiting, `BoundedQueue` monitor pattern with condition variables and high-watermark instrumentation, and `file_store_race_demo()` proving lost updates without mutex vs exact counts with mutex.
+  4. Implemented `demo/philosophers.py`:
+     - Dining Philosophers problem comparing Naive symmetric acquisition (simultaneous left pick causes circular wait deadlock) vs Dijkstra's Resource Hierarchy ordering (lower fork ID acquired first, breaking Coffman condition 4 and preventing deadlock).
+  5. Implemented `tools/vmstat_snapshot.py`:
+     - Virtual memory and swap telemetry snapshot tool utilizing `psutil` with safe platform fallbacks.
+  6. Upgraded Dashboard UI:
+     - Added Belady's Anomaly interactive demonstration table and Access Trace Replayer in File & Block Cache view.
+     - Added RWLock Starvation tester, Dining Philosophers interactive visualizer, and Storage Race Condition tester in Synchronization view.
+  7. Comprehensive test suite in `tests/test_phase4_cache_sync.py` (9 tests covering LRU/FIFO eviction, trace logging, block store cache hits, Belady's Anomaly, trace replay, RWLock starvation, CountingSemaphore, BoundedQueue, Dining Philosophers, storage race condition, and vmstat telemetry).
+- **Files Changed/Created**:
+  - `nodes/node_cache.py`
+  - `nodes/block_store.py`
+  - `nodes/node.py`
+  - `coordinator/file_manager/page_replacement.py`
+  - `coordinator/synchronization/readers_writers.py`
+  - `coordinator/synchronization/primitives.py`
+  - `coordinator/api/file_handlers.py`
+  - `coordinator/api/sync_handlers.py`
+  - `demo/philosophers.py`
+  - `tools/vmstat_snapshot.py`
+  - `dashboard/static/index.html`
+  - `dashboard/static/script.js`
+  - `tests/test_phase4_cache_sync.py`
+  - `docs/CONTRACT.md`
+  - `docs/PROGRESS.md`
+- **How to Try It**:
+  ```bash
+  python -m unittest discover -s tests
+  python demo/philosophers.py
+  python tools/vmstat_snapshot.py
+  python app.py
+  # In web dashboard, navigate to Cache tab for Belady's Anomaly, or Sync tab for RWLock and Philosophers.
+  ```
+- **Known Gaps**: Vector clocks and causal ordering across distributed nodes to be implemented in Phase 5.

@@ -230,12 +230,24 @@ Every message transported over TCP or RPC carries logical timestamps:
 - **Payload**: `repair` (bool, default true).
 - **Reply**: `{"type": "SCRUB_RESULT", "report": {...}, "corrupted_detected": int, "repaired": int}`
 
+### `CACHE_REPLAY`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `trace_path` (optional str), `refs` (optional list), `frame_sizes` (optional list, default [2, 3, 4]).
+- **Reply**: `{"type": "CACHE_REPLAY_RESULT", "reference_count": int, "unique_references": int, "by_frame": {...}}`
+
+### `BELADY_DEMO`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `{}`
+- **Reply**: `{"type": "BELADY_ANOMALY_RESULT", "refs": [...], "comparison": {...}, "anomaly_detected": bool, "explanation": str}`
+
 ### Node-Level Block Store RPCs (`nodes/block_store.py`)
 - `PutBlock`: `{"block_id": str, "data": str/b64, "base64": bool, "checksum": str, "forward_to": [node_ids...]}` -> `{"type": "OK", "block_id": str, "size": int, "checksum": str, "forwarded": [...]}`
-- `GetBlock`: `{"block_id": str}` -> `{"type": "OK", "block_id": str, "data": str/b64, "checksum": str, "base64": bool}`
+- `GetBlock`: `{"block_id": str}` -> `{"type": "OK", "block_id": str, "data": str/b64, "checksum": str, "base64": bool, "source": "cache"|"disk"}`
 - `DeleteBlock`: `{"block_id": str}` -> `{"type": "OK", "block_id": str}`
 - `ListBlocks`: `{}` -> `{"type": "OK", "node_id": str, "blocks": [...], "count": int}`
 - `CorruptBlock`: `{"block_id": str}` -> `{"type": "OK", "corrupted": str}`
+- `CacheStats`: `{}` -> `{"type": "OK", "node_id": str, "policy": str, "capacity": int, "hits": int, "misses": int, "hit_rate": float, ...}`
+- `CacheConfig`: `{"capacity": int, "policy": str}` -> `{"type": "OK", ...}`
 
 ### Backward-Compatible Legacy `FILE_*` Handlers
 
@@ -274,6 +286,31 @@ Every message transported over TCP or RPC carries logical timestamps:
 ### `SYNC_DEMO`
 - **Payload**: `kind` ("mutex" or omit for producer-consumer).
 - **Reply**: `{"type": "SYNC_RESULT", ...}`
+
+### `RW_DEMO`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `preference` ("reader"|"writer"), `duration` (float).
+- **Reply**: `{"type": "RW_DEMO_RESULT", "preference": str, "writer_acquired": bool, "writer_wait_seconds": float, "total_reads_during_wait": int, "starved": bool}`
+
+### `PHILOSOPHERS_DEMO`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `mode` ("hierarchical"|"naive"), `rounds` (int).
+- **Reply**: `{"type": "PHILOSOPHERS_RESULT", "mode": str, "total_meals": int, "expected_meals": int, "deadlocked": bool, "log": [...], "explanation": str}`
+
+### `BOUNDED_QUEUE_DEMO`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `capacity` (int), `items` (int).
+- **Reply**: `{"type": "BOUNDED_QUEUE_RESULT", "metrics": {...}, "log": [...]}`
+
+### `RACE_DEMO`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `threads` (int), `iterations` (int).
+- **Reply**: `{"type": "RACE_RESULT", "expected": int, "without_lock": int, "with_lock": int, "lost_updates": int, "race_detected": bool}`
+
+### `VMSTAT`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{}`
+- **Reply**: `{"type": "VMSTAT_RESULT", "virtual_memory": {...}, "swap_memory": {...}, "os": str}`
 
 ---
 
