@@ -67,3 +67,49 @@
   python app.py
   ```
 - **Known Gaps**: Subprocess job execution, Banker's admission dispatch, and distributed DFS to be implemented in Phases 1-3.
+
+---
+
+## Phase 1: Real Processes and CPU Scheduling
+- **Branch**: `phase-1-processes-scheduling` (merged into `main`)
+- **Tag**: `phase-1-complete`
+- **Completed**: Yes
+- **What Was Done**:
+  1. Built the real job catalog in `jobs/`: `wordcount.py`, `primes.py`, `compress.py`, `matmul.py`, `iosleep.py`, and `catalog.py` declaring resource profiles `{cpu_slots, mem_units, io_slots}`.
+  2. Implemented real execution in `nodes/node.py`: spawns jobs using `subprocess.Popen`, tracks them using `psutil`, measures wall and CPU times, and reports `TASK_STARTED`, `TASK_DONE`, or `TASK_FAILED`. Retained simulated mode for `job_type == "sim"`.
+  3. Integrated process lifecycle states (`NEW -> READY -> RUNNING -> WAITING -> COMPLETED/FAILED/KILLED`) with messages `PROC_LIST`, `PROC_KILL`, `PROC_SUSPEND`, and `PROC_RESUME`.
+  4. Expanded scheduler policies in `coordinator/scheduler/`: added SRTF (`srtf.py`) and Preemptive Priority with Aging (`priority_aging.py`), added live selection via `scheduler_manager.pick_next(ready_queue, policy, now)`.
+  5. Implemented measured metrics computation (waiting, turnaround, response times) with automated CSV logging to `logs/metrics_<policy>_<timestamp>.csv`, queryable via `METRICS`.
+  6. Created deterministic workload generator `demo/workload.py` generating `demo/lab_trace.json` (~70% short, ~20% medium, ~10% long) with handler `SUBMIT_TRACE`.
+  7. Extended node selection in `node_selector.py` with dynamic capacity awareness, and implemented automatic task rescheduling upon node failure (`_on_node_down`).
+  8. Upgraded Dashboard UI with policy selector (SRTF, Priority+Aging), 15-job trace submission button, live PCB table with Suspend/Resume/Kill controls, measured vs predicted metrics table, and actual execution Gantt chart.
+  9. Resolved coordinator reentrant lock deadlock by using `threading.RLock()`.
+- **Files Changed/Created**:
+  - `jobs/wordcount.py`
+  - `jobs/primes.py`
+  - `jobs/compress.py`
+  - `jobs/matmul.py`
+  - `jobs/iosleep.py`
+  - `jobs/catalog.py`
+  - `coordinator/scheduler/srtf.py`
+  - `coordinator/scheduler/priority_aging.py`
+  - `coordinator/scheduler/scheduler_manager.py`
+  - `coordinator/scheduler/node_selector.py`
+  - `coordinator/api/core_handlers.py`
+  - `coordinator/api/ops_handlers.py`
+  - `coordinator/main.py`
+  - `nodes/node.py`
+  - `demo/workload.py`
+  - `demo/lab_trace.json`
+  - `dashboard/static/index.html`
+  - `dashboard/static/script.js`
+  - `tests/test_phase1_scheduling.py`
+  - `docs/CONTRACT.md`
+  - `docs/PROGRESS.md`
+- **How to Try It**:
+  ```bash
+  python -m unittest discover -s tests
+  python app.py
+  # In web dashboard, navigate to Process Manager and click "⚡ Submit Lab Trace (15 Jobs)"
+  ```
+- **Known Gaps**: Banker's admission control on staged resource requests and distributed DFS blocks to be completed in Phases 2-3.
