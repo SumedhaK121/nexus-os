@@ -12,7 +12,8 @@
 ---
 
 ## Phase 0: Foundation, Architecture Restructure & Bug Fixes
-- **Branch**: `phase-0-foundation`
+- **Branch**: `phase-0-foundation` (merged into `main`)
+- **Tag**: `phase-0-complete`
 - **Completed**: Yes
 - **What Was Done**:
   1. Initialized Git repository on `main`, created `.gitignore` with runtime exemptions, committed original baseline (`Baseline: original NEXUS-OS v2`), and created `docs/GIT_WORKFLOW.md`.
