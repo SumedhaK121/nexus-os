@@ -268,3 +268,13 @@ Every message transported over TCP or RPC carries logical timestamps:
 - **Sender**: Dashboard / CLI -> Coordinator
 - **Payload**: `{"type": "METRICS", "policy": "srtf", "export_csv": true}`
 - **Reply**: `{"type": "METRICS_RESULT", "policy": "srtf", "measured_avg": {"waiting": 0.02, "turnaround": 0.53, "response": 0.02}, "actual_gantt": [...], "csv_exported": "metrics_srtf_12345.csv"}`
+
+### `BANKER_TOGGLE`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{"type": "BANKER_TOGGLE", "enabled": optional bool}`
+- **Reply**: `{"type": "OK", "enabled": bool}`
+
+### `DEADLOCK_RECOVER`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{"type": "DEADLOCK_RECOVER", "policy": "youngest"|"least_work"|"lowest_priority"}`
+- **Reply**: `{"type": "RECOVERY_RESULT", "recovered": bool, "victim": str, "policy": str, "cycle": [...], "resolved_count": int}`
