@@ -27,7 +27,10 @@ class FileManager:
         try:
             v, src = self.cache.get(name), "cache"
             if v is None:
-                src = "disk"; v = open(os.path.join(self.dir, name), encoding="utf-8").read(); self.cache.put(name, v)
+                src = "disk"
+                with open(os.path.join(self.dir, name), encoding="utf-8") as f:
+                    v = f.read()
+                self.cache.put(name, v)
             return {"name": name, "content": v, "source": src, **self.meta[name]}
         finally: self.rw.release_read()
     def delete(self, name):
