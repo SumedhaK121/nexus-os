@@ -465,3 +465,41 @@ Every message transported over TCP or RPC carries logical timestamps:
 - **Sender**: Dashboard / CLI -> Coordinator
 - **Payload**: `{"type": "DEADLOCK_RECOVER", "policy": "youngest"|"least_work"|"lowest_priority"}`
 - **Reply**: `{"type": "RECOVERY_RESULT", "recovered": bool, "victim": str, "policy": str, "cycle": [...], "resolved_count": int}`
+
+
+---
+
+## 6. gRPC & IPC Services (`proto/nexus.proto` & `coordinator/api/ops_handlers.py`)
+
+### `RPC_BENCH`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `iterations` (int, default 20), `payload_kb` (int, default 8).
+- **Reply**: `{"type": "RPC_BENCH_RESULT", "csv_file": str, "iterations": int, "payload_bytes": int, "tcp_json": {...}, "grpc": {...}}`
+
+### `IPC_BENCH`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `iterations` (int, default 50), `payload_bytes` (int, default 4096).
+- **Reply**: `{"type": "IPC_BENCH_RESULT", "practical": str, "tcp_socket": {...}, "shared_memory": {...}, "speedup_factor": float, "explanation": str}`
+
+### `GRPC_METRICS`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{}`
+- **Reply**: `{"type": "GRPC_METRICS_RESULT", "total_calls": int, "total_bytes": int, "methods": {...}}`
+
+### Protobuf Service Definitions (`proto/nexus.proto`)
+- `Coordinator`:
+  - `Register(RegisterRequest) returns (RegisterReply)`
+  - `Heartbeat(HeartbeatRequest) returns (HeartbeatReply)`
+  - `SubmitJob(SubmitJobRequest) returns (SubmitJobReply)`
+  - `ReportTask(ReportTaskRequest) returns (ReportTaskReply)`
+  - `Status(StatusRequest) returns (StatusReply)`
+  - `StreamTasks(StreamTasksRequest) returns (stream TaskExecution)`
+- `NodeService`:
+  - `ExecuteTask(ExecuteTaskRequest) returns (ExecuteTaskReply)`
+  - `PutBlock(PutBlockRequest) returns (PutBlockReply)`
+  - `GetBlock(GetBlockRequest) returns (GetBlockReply)`
+  - `DeleteBlock(DeleteBlockRequest) returns (DeleteBlockReply)`
+  - `RaRequest(RaRequestMessage) returns (RaReplyMessage)`
+  - `RaReply(RaReplyMessage) returns (RaAck)`
+  - `Ping(PingRequest) returns (PingReply)`
+  - `SyncPull(SyncPullRequest) returns (SyncPullReply)`

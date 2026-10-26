@@ -80,3 +80,22 @@ def register(coord):
             "actual_gantt": gantt,
             "csv_exported": os.path.basename(csv_file) if csv_file else None,
         }
+
+    @coord.handler("RPC_BENCH")
+    def _rpc_bench(c, ctx, m):
+        from tools.rpc_bench import run_rpc_benchmark
+        iters = int(m.get("iterations", 20))
+        kb = int(m.get("payload_kb", 8))
+        return {"type": "RPC_BENCH_RESULT", **run_rpc_benchmark(iterations=iters, payload_kb=kb)}
+
+    @coord.handler("IPC_BENCH")
+    def _ipc_bench(c, ctx, m):
+        from tools.ipc_demo import run_ipc_benchmark
+        iters = int(m.get("iterations", 50))
+        size = int(m.get("payload_bytes", 4096))
+        return {"type": "IPC_BENCH_RESULT", **run_ipc_benchmark(iterations=iters, payload_size=size)}
+
+    @coord.handler("GRPC_METRICS")
+    def _grpc_metrics(c, ctx, m):
+        from communication.grpc_transport import get_grpc_metrics
+        return {"type": "GRPC_METRICS_RESULT", **get_grpc_metrics()}

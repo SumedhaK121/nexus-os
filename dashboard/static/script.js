@@ -261,3 +261,29 @@ async function syncSetPolicy(pol){
   toast(`Sync transfer scheduling policy updated to ${r.policy}`);
   refresh();
 }
+
+async function runRpcBench(){
+  toast("Running RPC Benchmark (TCP-JSON vs gRPC)...");
+  const r=await api({type:"RPC_BENCH",iterations:20,payload_kb:8});
+  if(r.type=="ERROR")return toast(r.error,0);
+  const tcp=r.tcp_json, grp=r.grpc;
+  $("rpcBenchOut").innerHTML=`<div class="card" style="border:1px solid #10b981"><h4>RPC Micro-Benchmark Results (${r.iterations} iterations, ${r.payload_bytes} B payload)</h4><table><tr><th>Transport</th><th>Method</th><th>Avg Latency</th><th>p50 Latency</th><th>p99 Latency</th><th>Throughput</th></tr><tr><td><b>TCP-JSON</b></td><td>PING</td><td>${tcp.ping.avg_ms} ms</td><td>${tcp.ping.p50_ms} ms</td><td>${tcp.ping.p99_ms} ms</td><td>${tcp.ping.calls_per_sec} calls/s</td></tr><tr><td><b>TCP-JSON</b></td><td>PutBlock</td><td>${tcp.put_block.avg_ms} ms</td><td>${tcp.put_block.p50_ms} ms</td><td>${tcp.put_block.p99_ms} ms</td><td>${tcp.put_block.calls_per_sec} calls/s</td></tr>${grp.supported&&grp.ping?`<tr><td><b class="chip">gRPC (HTTP/2)</b></td><td>PING</td><td>${grp.ping.avg_ms} ms</td><td>${grp.ping.p50_ms} ms</td><td>${grp.ping.p99_ms} ms</td><td class="good">${grp.ping.calls_per_sec} calls/s</td></tr><tr><td><b class="chip">gRPC (HTTP/2)</b></td><td>PutBlock</td><td>${grp.put_block.avg_ms} ms</td><td>${grp.put_block.p50_ms} ms</td><td>${grp.put_block.p99_ms} ms</td><td>${grp.put_block.calls_per_sec} calls/s</td></tr>`:''}</table><small class="mut">Exported CSV: <code>${r.csv_file}</code> · See docs/wireshark.md for HTTP/2 capture filters.</small></div>`;
+  toast("RPC benchmark completed!");
+  refresh();
+}
+
+async function runIpcBench(){
+  toast("Running Practical 9 IPC Benchmark (Sockets vs Shared Memory)...");
+  const r=await api({type:"IPC_BENCH",iterations:50,payload_bytes:4096});
+  if(r.type=="ERROR")return toast(r.error,0);
+  const sock=r.tcp_socket, shm=r.shared_memory;
+  $("rpcBenchOut").innerHTML=`<div class="card" style="border:1px solid #6366f1"><h4>OSDS Practical 9: ${r.practical}</h4><table><tr><th>IPC Mechanism</th><th>Payload</th><th>Avg Latency</th><th>p99 Latency</th><th>Throughput</th></tr><tr><td><b>${sock.mechanism}</b></td><td>${sock.payload_bytes} B</td><td>${sock.avg_latency_us} µs</td><td>${sock.p99_latency_us} µs</td><td>${sock.throughput_mb_s} MB/s</td></tr><tr><td><b class="good">${shm.mechanism}</b></td><td>${shm.payload_bytes} B</td><td class="good">${shm.avg_latency_us} µs</td><td>${shm.p99_latency_us} µs</td><td class="good"><b>${shm.throughput_mb_s} MB/s</b></td></tr></table><p class="mut" style="margin-top:6px">${r.explanation}</p></div>`;
+  toast(`IPC Benchmark complete: Shared Memory is ${r.speedup_factor}x faster`);
+}
+
+async function loadGrpcMetrics(){
+  const r=await api({type:"GRPC_METRICS"});
+  let rows=Object.entries(r.methods||{}).map(([m,s])=>`<tr><td><b>${m}</b></td><td>${s.calls}</td><td>${s.bytes} B</td><td>${s.avg_latency_ms} ms</td><td>${s.errors}</td></tr>`).join("");
+  $("rpcBenchOut").innerHTML=`<div class="card"><h4>Live gRPC Telemetry Metrics (Total Calls: ${r.total_calls}, Total Bytes: ${r.total_bytes})</h4><table><tr><th>gRPC Method</th><th>Calls</th><th>Bytes</th><th>Avg Latency</th><th>Errors</th></tr>${rows||'<tr><td colspan=5 class="mut">No gRPC calls recorded yet</td></tr>'}</table></div>`;
+  toast("Refreshed gRPC telemetry metrics");
+}

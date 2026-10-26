@@ -395,3 +395,61 @@
   # In web dashboard, navigate to Sync tab to view Dropbox-Lite metrics and click "▶ Run Dropbox-Lite Sync Demo"
   ```
 - **Known Gaps**: gRPC transport stubs, protobuf definitions, RPC benchmarks, and Wireshark trace documentation to be implemented in Phase 8.
+
+
+---
+
+## Phase 8: gRPC and IPC
+- **Branch**: `phase-8-grpc` (merged into `main`)
+- **Tag**: `phase-8-complete`
+- **Completed**: Yes
+- **What Was Done**:
+  1. Implemented Protobuf service contracts in `proto/nexus.proto`:
+     - Defined `Coordinator` service (`Register`, `Heartbeat`, `SubmitJob`, `ReportTask`, `Status`, `StreamTasks`).
+     - Defined `NodeService` service (`ExecuteTask`, `PutBlock`, `GetBlock`, `DeleteBlock`, `RaRequest`, `RaReply`, `Ping`, `SyncPull`).
+     - Embedded dual logical timestamp envelopes (`ts` integer + `vc` map) on every message.
+  2. Implemented stub compiler in `tools/gen_proto.py`:
+     - Compiles `nexus.proto` into `communication/generated/nexus_pb2.py` and `nexus_pb2_grpc.py` using `grpc_tools.protoc`.
+     - Patches Python import paths for seamless module import.
+  3. Implemented `communication/grpc_transport.py`:
+     - `NodeServiceServicer` dispatching incoming gRPC calls to `BlockStore`, `RaParticipant`, and worker engines.
+     - `grpc_call_node()` stub wrapper with deadlines, exponential backoff retries, and dict-to-protobuf translation.
+     - Global RPC metrics interceptor tracking calls, sent/received bytes, and average latencies into `coord.net`.
+  4. Multi-transport switch in `communication/rpc.py`:
+     - Configurable transport via `NEXUS_TRANSPORT=tcp|grpc`.
+     - Preserves 100% backward compatibility for TCP-JSON local IPC.
+  5. Implemented OSDS Practical 9 IPC benchmark in `tools/ipc_demo.py`:
+     - Compares loopback TCP sockets vs `multiprocessing.shared_memory` zero-copy page mapping.
+  6. Implemented RPC micro-benchmark in `tools/rpc_bench.py`:
+     - Compares TCP-JSON vs gRPC HTTP/2 on lightweight (`PING`) and payload (`PutBlock`) calls.
+     - Logs benchmarks to `logs/rpc_bench.csv`.
+  7. Authored Wireshark packet inspection guide in `docs/wireshark.md`:
+     - Filter expressions for port 9000, HTTP/2 frames, and Protobuf dissection.
+  8. Enforced message robustness in `communication/tcp_client.py` (16MB size limit, malformed JSON recovery, version envelope).
+  9. Comprehensive unit test suite in `tests/test_phase8_grpc.py` (8 tests passing, total suite 68 tests passing).
+- **Files Changed/Created**:
+  - `proto/nexus.proto`
+  - `tools/gen_proto.py`
+  - `communication/generated/nexus_pb2.py`
+  - `communication/generated/nexus_pb2_grpc.py`
+  - `communication/grpc_transport.py`
+  - `communication/rpc.py`
+  - `tools/ipc_demo.py`
+  - `tools/rpc_bench.py`
+  - `docs/wireshark.md`
+  - `communication/tcp_client.py`
+  - `coordinator/api/ops_handlers.py`
+  - `dashboard/static/index.html`
+  - `dashboard/static/script.js`
+  - `tests/test_phase8_grpc.py`
+  - `docs/CONTRACT.md`
+  - `docs/PROGRESS.md`
+- **How to Try It**:
+  ```bash
+  python -m unittest discover -s tests
+  python tools/ipc_demo.py
+  python tools/rpc_bench.py
+  python app.py
+  # In web dashboard, navigate to Network / IPC to view live gRPC telemetry and run RPC/IPC benchmarks.
+  ```
+- **Known Gaps**: Docker multi-container cluster setup, cgroup memory limits, live container metrics, and chaos testing to be implemented in Phase 9.
