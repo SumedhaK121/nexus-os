@@ -12,7 +12,8 @@ async function compare(){const r=await api({type:"COMPARE",processes:procs(),qua
 $("out").innerHTML=`<h3 style="margin-top:18px">Algorithm comparison</h3><table><tr><th>Algorithm</th><th>Avg waiting</th><th>Avg turnaround</th><th>Avg response</th></tr>`+r.results.map(x=>`<tr><td>${x.algo}</td><td class="${x.waiting==best?"best":""}">${x.waiting}${x.waiting==best?" ★":""}</td><td>${x.turnaround}</td><td>${x.response}</td></tr>`).join("")+`</table>`+r.results.map(x=>`<small style="margin-top:10px">${x.algo}</small>`+gantt(x.gantt)).join("")}
 async function bInit(){const r=await api({type:"BANKER_INIT",available:[3,3,2],max:{P0:[7,5,3],P1:[3,2,2],P2:[9,0,2],P3:[2,2,2],P4:[4,3,3]},alloc:{P0:[0,1,0],P1:[2,0,0],P2:[3,0,2],P3:[2,1,1],P4:[0,0,2]}});toast(r.safe[0]?"Initial state SAFE · "+r.safe[1].join(" → "):"Initial state UNSAFE",r.safe[0]);refresh()}
 async function bReq(){const r=await api({type:"BANKER_REQUEST",pid:$("bp").value,request:$("br").value.split(",").map(Number)});r.granted?toast("GRANTED · safe sequence "+r.safe_sequence.join(" → ")):toast("DENIED · "+r.reason,0);refresh()}
-const ev=a=>[...a].reverse().map(e=>`<div><b>T=${e.T}</b> ${e.who}: ${e.event}</div>`).join("");
+const fmtVc=v=>v&&Object.keys(v).length?` <span class="tag" style="font-size:11px;padding:1px 5px">${Object.entries(v).map(([k,c])=>`${k}:${c}`).join(" ")}</span>`:"";
+const ev=a=>[...a].reverse().map(e=>`<div><b>T=${e.T}</b>${fmtVc(e.vc)} <span style="color:var(--c)">${e.who}</span>: ${e.event}</div>`).join("");
 function draw(){const ns=Object.entries(S.nodes),ts=Object.entries(S.tasks),on=ns.filter(([,n])=>n.status=="ONLINE").length,run=ts.filter(([,t])=>t.state=="Running").length;
 hist=[...hist,run].slice(-40);$("clk").textContent="Lamport T="+S.clock;$("lt").textContent=S.clock;
 $("stats").innerHTML=[["Online nodes",on+" / "+ns.length],["Running",run],["Completed",ts.length-run],["Events logged",S.events.length]].map(([k,v])=>`<div class="card stat"><small>${k.toUpperCase()}</small><b>${v}</b></div>`).join("");
@@ -173,4 +174,23 @@ async function vmstatDemo(){
   const vm=r.virtual_memory||{}, sw=r.swap_memory||{};
   $("pcOut").innerHTML=`<div><b>Virtual Memory &amp; Swap Telemetry (${r.os}):</b></div><div>RAM: ${vm.used_mb} MB used / ${vm.total_mb} MB total (<b>${vm.percent}%</b>) · Available: ${vm.available_mb} MB</div><div>Swap: ${sw.used_mb} MB used / ${sw.total_mb} MB total (<b>${sw.percent}%</b>) · Free: ${sw.free_mb} MB</div>`;
   toast("Loaded VM telemetry snapshot");
+}
+
+async function vcDemo(){
+  const r=await api({type:"CONCURRENT_DEMO"});
+  const ea=r.event_a, eb=r.event_b;
+  $("vcDemoOut").innerHTML=`<div class="card" style="border:1px solid #8b5cf6"><h4>Concurrent Edits Demonstration (Vector Clocks)</h4><div class="row"><div><b>${ea.node}</b>: ${ea.action}</div><div>VC: <code>${JSON.stringify(ea.vc)}</code> (T=${ea.T})</div></div><div class="row" style="margin-top:6px"><div><b>${eb.node}</b>: ${eb.action}</div><div>VC: <code>${JSON.stringify(eb.vc)}</code> (T=${eb.T})</div></div><div style="margin-top:8px"><span class="tag ${r.relation=='CONCURRENT'?'r':'g'}">${r.relation}</span> <span class="mut">${r.explanation}</span></div></div>`;
+  toast("Vector Clock Demo: Conflicting concurrent edits detected!");
+  refresh();
+}
+
+async function causalLog(){
+  const r=await api({type:"CAUSAL_LOG",filter:"concurrent"});
+  const pairs=r.concurrent_pairs||[];
+  if(!pairs.length){
+    toast("No concurrent event pairs in recent timeline");
+    return;
+  }
+  $("vcDemoOut").innerHTML=`<div class="card"><h4>Detected Concurrent Event Pairs (${pairs.length})</h4>`+pairs.map(p=>`<div class="row" style="margin:4px 0"><span>[T=${p.event_1.T}] <b>${p.event_1.who}</b>: ${p.event_1.event} (<code>${JSON.stringify(p.event_1.vc)}</code>)</span><span class="tag r">||</span><span>[T=${p.event_2.T}] <b>${p.event_2.who}</b>: ${p.event_2.event} (<code>${JSON.stringify(p.event_2.vc)}</code>)</span></div>`).join("")+`</div>`;
+  toast(`Found ${pairs.length} concurrent event pairs`);
 }

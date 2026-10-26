@@ -1,6 +1,6 @@
 """NEXUS-OS Worker Node.
 Handles registration, real process execution via subprocess & psutil,
-block-based distributed storage via BlockStore,
+block-based distributed storage via BlockStore, dual logical & vector clocks,
 heartbeat telemetry, and local RPC server for inter-node communication.
 Concept: Worker node daemon (similar to Kubernetes kubelet / HDFS DataNode / Slurm slurmd).
 """
@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from communication.tcp_client import Conn
 from communication import rpc
 from distributed_clock.lamport_clock import LamportClock
+from distributed_clock.vector_clock import VectorClock
 from jobs import catalog
 from nodes.block_store import BlockStore
 from nodes.node_server import NodeServer
@@ -34,8 +35,13 @@ class Node:
         self.host = host
         self.coord_port = port
         self.clock = LamportClock()
+        self.vc = VectorClock(node_id=node_id)
         self.running = True
         self.conn = None
+
+        # Local event log for causal event merging
+        self.local_events = []
+        self.events_lock = threading.Lock()
 
         # Data directory for this node
         self.data_dir = os.environ.get("NEXUS_DATA_DIR", os.path.join("storage", self.id))
@@ -84,6 +90,21 @@ class Node:
         self.server.register_method("CacheStats", self.block_store.cache_stats)
         self.server.register_method("CacheConfig", self.block_store.cache_config)
 
+    def record_event(self, text):
+        """Records a timestamped event into the local event log."""
+        t = self.clock.tick()
+        v = self.vc.tick()
+        with self.events_lock:
+            self.local_events.append({
+                "ts": t,
+                "vc": dict(v),
+                "node_id": self.id,
+                "event": text,
+                "wall_time": round(time.time(), 3),
+            })
+            if len(self.local_events) > 100:
+                self.local_events.pop(0)
+
     def _rpc_kill(self, payload):
         pid = payload.get("pid")
         with self.proc_lock:
@@ -91,6 +112,7 @@ class Node:
             if entry and entry["popen"]:
                 try:
                     entry["popen"].kill()
+                    self.record_event(f"Killed process {pid}")
                     return {"type": "OK", "killed": pid}
                 except Exception as e:
                     return {"type": "ERROR", "error": str(e)}
@@ -103,6 +125,7 @@ class Node:
             if entry and entry.get("psutil"):
                 try:
                     entry["psutil"].suspend()
+                    self.record_event(f"Suspended process {pid}")
                     return {"type": "OK", "suspended": pid}
                 except Exception as e:
                     return {"type": "ERROR", "error": str(e)}
@@ -115,6 +138,7 @@ class Node:
             if entry and entry.get("psutil"):
                 try:
                     entry["psutil"].resume()
+                    self.record_event(f"Resumed process {pid}")
                     return {"type": "OK", "resumed": pid}
                 except Exception as e:
                     return {"type": "ERROR", "error": str(e)}
@@ -122,6 +146,7 @@ class Node:
 
     def send(self, msg):
         msg["ts"] = self.clock.tick()
+        msg["vc"] = self.vc.tick()
         if self.conn:
             self.conn.send(msg)
 
@@ -148,6 +173,8 @@ class Node:
             if msg is None:
                 break
             self.clock.update(msg.get("ts", 0))
+            if "vc" in msg:
+                self.vc.update(msg.get("vc", {}))
             mtype = msg.get("type")
 
             if mtype == "EXEC":
@@ -169,15 +196,18 @@ class Node:
         burst = m.get("burst", 1)
         args = m.get("args", [])
         print(f"[{self.id}] T={self.clock.t} EXEC {pid} ({job_type}, burst={burst})", flush=True)
+        self.record_event(f"EXEC {pid} ({job_type}, burst={burst})")
 
         if job_type == "sim":
             time.sleep(burst * 0.3)
+            self.record_event(f"Completed {pid} (simulated)")
             self.send({"type": "TASK_DONE", "pid": pid, "node_id": self.id, "burst": burst})
             return
 
         cmd = catalog.get_command(job_type, args)
         if not cmd:
             time.sleep(burst * 0.3)
+            self.record_event(f"Completed {pid} (fallback)")
             self.send({"type": "TASK_DONE", "pid": pid, "node_id": self.id, "burst": burst})
             return
 
@@ -198,35 +228,29 @@ class Node:
                     "psutil": ps_proc,
                     "start": start_time,
                     "job_type": job_type,
-                    "burst": burst,
                 }
 
-            stdout, stderr = p.communicate()
-            end_time = time.time()
-            wall_time = end_time - start_time
+            stdout_data, stderr_data = p.communicate()
+            wall_time = time.time() - start_time
             cpu_time = wall_time
-            if ps_proc:
-                try:
-                    c_times = ps_proc.cpu_times()
-                    cpu_time = c_times.user + c_times.system
-                except Exception:
-                    pass
 
             with self.proc_lock:
                 self.local_procs.pop(pid, None)
 
             if p.returncode == 0:
+                self.record_event(f"Completed {pid} in {wall_time:.2f}s")
                 self.send({
                     "type": "TASK_DONE",
                     "pid": pid,
                     "node_id": self.id,
-                    "exit_code": 0,
+                    "burst": burst,
                     "wall_time": round(wall_time, 3),
                     "cpu_time": round(cpu_time, 3),
-                    "burst": burst,
+                    "exit_code": 0,
                 })
             else:
-                err_msg = stderr.decode(errors="replace").strip() if stderr else f"Exit code {p.returncode}"
+                err_msg = stderr_data.decode("utf-8", errors="replace")[:200]
+                self.record_event(f"Failed {pid} with exit code {p.returncode}")
                 self.send({
                     "type": "TASK_FAILED",
                     "pid": pid,
@@ -237,6 +261,7 @@ class Node:
         except Exception as e:
             with self.proc_lock:
                 self.local_procs.pop(pid, None)
+            self.record_event(f"Exception on {pid}: {str(e)}")
             self.send({
                 "type": "TASK_FAILED",
                 "pid": pid,
@@ -268,6 +293,17 @@ class Node:
                     "mem": mem,
                     "load": running_count,
                 })
+
+                # Batch send recorded local events to coordinator
+                with self.events_lock:
+                    events_batch = list(self.local_events)
+                    self.local_events.clear()
+                if events_batch:
+                    self.send({
+                        "type": "EVENTS",
+                        "node_id": self.id,
+                        "events": events_batch,
+                    })
             except OSError:
                 return
             time.sleep(2)
