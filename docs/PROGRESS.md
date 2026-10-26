@@ -113,3 +113,37 @@
   # In web dashboard, navigate to Process Manager and click "⚡ Submit Lab Trace (15 Jobs)"
   ```
 - **Known Gaps**: Banker's admission control on staged resource requests and distributed DFS blocks to be completed in Phases 2-3.
+
+---
+
+## Phase 2: Resource Manager, Banker's, and Real Deadlocks
+- **Branch**: `phase-2-resources-deadlock` (merged into `main`)
+- **Tag**: `phase-2-complete`
+- **Completed**: Yes
+- **What Was Done**:
+  1. Implemented real cluster capacity aggregation: dynamically reads online node capacities (`cpu_slots`, `mem_units`, `io_slots`) from registrations/cgroups/psutil, shrinking when nodes disconnect and re-evaluating admission safety.
+  2. Integrated Dijkstra's Banker's Algorithm with cluster admission control and staged resource acquisition. Added toggleable admission control (`NEXUS_BANKER=on|off`, message `BANKER_TOGGLE`), `BANKER_STATE`, and maintained textbook what-if simulation.
+  3. Extended deadlock detector (`deadlock_detector.py`) with `find_all_cycles()` to identify all distinct elementary cycles in wait-for graphs.
+  4. Implemented live wait-for graph builder in `resource_manager.py` with multi-strategy deadlock recovery (`select_victim` via `youngest`, `least_work`, or `lowest_priority`), process termination, and recovery counter tracking (`DEADLOCK_RECOVER`).
+  5. Implemented `demo/deadlock_scene.py` demonstrating circular wait formation under Banker OFF, wait-for cycle detection, victim termination, and deadlock avoidance under Banker ON.
+  6. Upgraded Dashboard UI with Banker ON/OFF toggle, live wait-for graph visualization, deadlock recovery controls with victim selection policy dropdown, and recovery event logs.
+- **Files Changed/Created**:
+  - `coordinator/deadlock/deadlock_detector.py`
+  - `coordinator/deadlock/bankers_algorithm.py`
+  - `coordinator/resource_manager/resource_manager.py`
+  - `coordinator/api/resource_handlers.py`
+  - `coordinator/main.py`
+  - `demo/deadlock_scene.py`
+  - `dashboard/static/index.html`
+  - `dashboard/static/script.js`
+  - `tests/test_phase2_deadlock.py`
+  - `docs/CONTRACT.md`
+  - `docs/PROGRESS.md`
+- **How to Try It**:
+  ```bash
+  python -m unittest discover -s tests
+  python demo/deadlock_scene.py
+  python app.py
+  # In web dashboard, navigate to Deadlock Detection tab and click "🔍 Live Cluster WFG"
+  ```
+- **Known Gaps**: Distributed block-based storage (64KB chunks, pipeline replication) to be implemented in Phase 3.
