@@ -1,7 +1,8 @@
 """NEXUS-OS Worker Node.
 Handles registration, real process execution via subprocess & psutil,
+block-based distributed storage via BlockStore,
 heartbeat telemetry, and local RPC server for inter-node communication.
-Concept: Worker node daemon (similar to Kubernetes kubelet / Slurm slurmd).
+Concept: Worker node daemon (similar to Kubernetes kubelet / HDFS DataNode / Slurm slurmd).
 """
 
 import os
@@ -17,6 +18,7 @@ from communication.tcp_client import Conn
 from communication import rpc
 from distributed_clock.lamport_clock import LamportClock
 from jobs import catalog
+from nodes.block_store import BlockStore
 from nodes.node_server import NodeServer
 
 try:
@@ -38,6 +40,9 @@ class Node:
         # Data directory for this node
         self.data_dir = os.environ.get("NEXUS_DATA_DIR", os.path.join("storage", self.id))
         os.makedirs(self.data_dir, exist_ok=True)
+
+        # Block storage engine
+        self.block_store = BlockStore(self.data_dir, self.id)
 
         # Process tracking table
         self.local_procs = {}  # pid -> {popen, psutil, start, job_type}
@@ -69,6 +74,13 @@ class Node:
         self.server.register_method("PROC_KILL", self._rpc_kill)
         self.server.register_method("PROC_SUSPEND", self._rpc_suspend)
         self.server.register_method("PROC_RESUME", self._rpc_resume)
+
+        # Distributed Block Storage endpoints
+        self.server.register_method("PutBlock", self.block_store.put_block)
+        self.server.register_method("GetBlock", self.block_store.get_block)
+        self.server.register_method("DeleteBlock", self.block_store.delete_block)
+        self.server.register_method("ListBlocks", self.block_store.list_blocks)
+        self.server.register_method("CorruptBlock", self.block_store.corrupt_block)
 
     def _rpc_kill(self, payload):
         pid = payload.get("pid")
@@ -157,7 +169,6 @@ class Node:
         print(f"[{self.id}] T={self.clock.t} EXEC {pid} ({job_type}, burst={burst})", flush=True)
 
         if job_type == "sim":
-            # Backward-compatible synthetic sleep execution
             time.sleep(burst * 0.3)
             self.send({"type": "TASK_DONE", "pid": pid, "node_id": self.id, "burst": burst})
             return
@@ -168,7 +179,6 @@ class Node:
             self.send({"type": "TASK_DONE", "pid": pid, "node_id": self.id, "burst": burst})
             return
 
-        # Real process spawn
         self.send({"type": "TASK_STARTED", "pid": pid, "node_id": self.id, "job_type": job_type})
         start_time = time.time()
         try:

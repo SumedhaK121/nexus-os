@@ -69,7 +69,6 @@ def register(coord):
         result = scheduler.run(algo, procs, quantum)
         by_pid = {p["pid"]: p for p in procs}
 
-        # Order determined by scheduler Gantt
         order = []
         for item in result["gantt"]:
             pid = item[0]
@@ -120,7 +119,6 @@ def register(coord):
                     except ValueError:
                         pass
 
-                # Dispatch EXEC to worker
                 exec_msg = {
                     "type": "EXEC",
                     "pid": pid,
@@ -147,7 +145,6 @@ def register(coord):
             with open(trace_path, "r", encoding="utf-8") as f:
                 procs = json.load(f)
         if not procs:
-            # Fall back to default lab trace
             default_trace = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "demo", "lab_trace.json")
             if os.path.exists(default_trace):
                 with open(default_trace, "r", encoding="utf-8") as f:
@@ -196,7 +193,6 @@ def register(coord):
             turnaround_time = max(0.0, now - submit_time)
             response_time = waiting_time
 
-            # Record actual Gantt slice: (pid, start, finish, node)
             c.actual_gantt.append((pid, round(start_time, 2), round(now, 2), node_id))
             c.measured_metrics.append({
                 "pid": pid,
@@ -369,13 +365,17 @@ def register(coord):
                 else None
             )
 
-            # Detailed process table for dashboard
             pcb_table = (
                 c.proc_mgr.list_all()
                 if hasattr(c, "proc_mgr")
                 else {pid: {"pid": pid, "state": t["state"], "node": t.get("node", "—"), "burst": t.get("burst", 1)}
                       for pid, t in tasks_dict.items()}
             )
+
+            # Distributed File System stats
+            dfs_files = c.dfs.meta.get_all_files() if hasattr(c, "dfs") else []
+            dfs_node_counts = c.dfs.meta.get_node_block_counts() if hasattr(c, "dfs") else {}
+            dfs_under_rep = len(c.dfs.meta.get_under_replicated_blocks(2)) if hasattr(c, "dfs") else 0
 
             return {
                 "type": "STATUS",
@@ -385,6 +385,9 @@ def register(coord):
                 "proc_table": pcb_table,
                 "events": events_list,
                 "files": files_list,
+                "dfs_files": dfs_files,
+                "dfs_node_counts": dfs_node_counts,
+                "dfs_under_replicated": dfs_under_rep,
                 "util": util_data,
                 "procs": procs_data,
                 "safe": safe_flag,

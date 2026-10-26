@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from communication.tcp_client import Conn
 from coordinator.api.handlers import install
 from coordinator.deadlock.bankers_algorithm import Banker
+from coordinator.file_manager.dfs_manager import DfsManager
 from coordinator.file_manager.file_manager import FileManager
 from coordinator.node_manager.node_manager import NodeManager
 from coordinator.process_manager.process_manager import ProcessManager
@@ -64,6 +65,7 @@ class Coordinator:
         self.node_mgr = NodeManager()
         self.proc_mgr = ProcessManager()
         self.res_mgr = ResourceManager()
+        self.dfs = DfsManager(coord=self)
 
         # Subscribe to node failure events
         self.node_mgr.subscribe_node_down(self._on_node_down)
@@ -81,6 +83,13 @@ class Coordinator:
 
     def _on_node_down(self, node_id):
         self.log("coordinator", f"Node failure detected: {node_id} is OFFLINE")
+        # 1. Update DFS metadata and trigger self-healing re-replication
+        if hasattr(self, "dfs"):
+            self.dfs.meta.mark_node_offline(node_id)
+            online = self.node_mgr.online(self.nodes)
+            threading.Thread(target=self.dfs.re_replicate_under_replicated, args=(online,), daemon=True).start()
+
+        # 2. Reschedule running / ready compute jobs
         rescheduled = []
         with self.lock:
             self.res_mgr.update_cluster_capacity(self.nodes)
@@ -114,6 +123,8 @@ class Coordinator:
 
     def _on_node_up(self, node_id):
         self.log("coordinator", f"Node joined or recovered: {node_id} is ONLINE")
+        if hasattr(self, "dfs"):
+            self.dfs.meta.mark_node_online(node_id)
         with self.lock:
             self.res_mgr.update_cluster_capacity(self.nodes)
 

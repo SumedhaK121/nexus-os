@@ -25,6 +25,12 @@ $("util").innerHTML=(S.util||[]).map(u=>`<div class="row" style="margin:8px 0"><
 const mx_=Math.max(1,...Object.values(S.net));$("net").innerHTML=Object.entries(S.net).sort((a,b)=>b[1]-a[1]).map(([t,c])=>`<div class="row" style="margin:5px 0"><code style="width:140px">${t}</code><div class="bar" style="flex:1;margin:0"><i style="width:${c/mx_*100}%"></i></div><small>${c}</small></div>`).join("");
 const k=S.cache;$("cstats").innerHTML=`<div style="display:grid;grid-template-columns:repeat(3,1fr)"><div><small>HITS</small><b style="font-size:26px">${k.hits}</b></div><div><small>MISSES</small><b style="font-size:26px">${k.misses}</b></div><div><small>HIT RATE</small><b style="font-size:26px">${k.rate}%</b></div></div><div class="bar"><i style="width:${k.rate}%"></i></div><small>${k.policy} · capacity ${k.capacity} · cached: ${k.keys.join(", ")||"—"}</small><small>last evicted: ${k.evicted.join(", ")||"—"}</small>`;
 $("ftab").innerHTML=Object.entries(S.files).map(([n,f])=>`<tr><td><b style="cursor:pointer;color:var(--c)" onclick="fView('${n}')">${n}</b></td><td>v${f.version}</td><td>${f.size} B</td><td>${f.nodes.map(x=>`<span class="tag g">${x}</span>`).join(" ")}</td><td><button class="ghost" onclick="fView('${n}')">Open</button> <button class="ghost" onclick="fDel('${n}')">✕</button></td></tr>`).join("")||`<tr><td colspan=5 class="mut">No files yet</td></tr>`;
+const df=S.dfs_files||[], dc=S.dfs_node_counts||{}, du=S.dfs_under_replicated||0;
+if($("dfsSummary")){
+  const loadStr=Object.entries(dc).map(([node,cnt])=>`<span class="tag g">${node}: ${cnt} blks</span>`).join(" ")||"No blocks stored";
+  $("dfsSummary").innerHTML=`<span>Total DFS Files: <b>${df.length}</b></span> <span style="margin-left:14px">Under-replicated: <b class="${du>0?'bad':'good'}">${du}</b></span> <span style="margin-left:14px">Node Load: ${loadStr}</span>`;
+  if(!window._dfsLoaded){dfsLs("/");window._dfsLoaded=true;}
+}
 const b=S.banker;if(!b){$("bTable").innerHTML=`<p class="mut">Click “Load textbook example” to start.</p>`;return}
 const ps=Object.keys(b.max),n=b.available.length,f=a=>a.map(x=>`<td>${x}</td>`).join("");
 $("bTable").innerHTML=`<table><tr><th>Process</th><th colspan=${n}>Allocation</th><th colspan=${n}>Max</th><th colspan=${n}>Need</th></tr>`+ps.map(p=>`<tr><td><b style="color:${col(p)}">${p}</b></td>${f(b.alloc[p])}${f(b.max[p])}${f(b.max[p].map((m,i)=>m-b.alloc[p][i]))}</tr>`).join("")+`</table><p>Available: ${b.available.map(x=>`<span class="tag g">${x}</span>`).join(" ")}</p>`;
@@ -66,3 +72,54 @@ async function toggleBanker(){const r=await api({type:"BANKER_TOGGLE"});$("bTogg
 async function dlLive(){const r=await api({type:"DEADLOCK_DETECT"});renderWfg(r);$("dlCounts").textContent=`Detected: ${r.detected_count} · Resolved: ${r.resolved_count}`}
 function renderWfg(r){const ps=Object.keys(r.wait_for);if(!ps.length){$("dlOut").innerHTML=`<p class="mut">Wait-for graph is empty — no process is currently waiting for another.</p>`;return}const n=ps.length,P=ps.map((p,i)=>[130+85*Math.cos(2*Math.PI*i/n-Math.PI/2),110+75*Math.sin(2*Math.PI*i/n-Math.PI/2)]),ix=Object.fromEntries(ps.map((p,i)=>[p,i])),cy=new Set(r.cycle.slice(0,-1).map((p,i)=>p+">"+r.cycle[i+1]));let e="";ps.forEach(p=>r.wait_for[p].forEach(q=>{if(ix[q]===undefined)return;const a=P[ix[p]],b=P[ix[q]],bad=cy.has(p+">"+q),dx=b[0]-a[0],dy=b[1]-a[1],L=Math.hypot(dx,dy)||1,ux=dx/L,uy=dy/L;e+=`<line x1="${a[0]+ux*22}" y1="${a[1]+uy*22}" x2="${b[0]-ux*26}" y2="${b[1]-uy*26}" stroke="${bad?"#fb7185":"#8a93b8"}" stroke-width="2.5" marker-end="url(#ar${bad?1:0})"/>`}));$("dlOut").innerHTML=`<svg viewBox="0 0 260 220" style="max-width:340px;width:100%"><defs><marker id="ar0" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0L6,3L0,6z" fill="#8a93b8"/></marker><marker id="ar1" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0L6,3L0,6z" fill="#fb7185"/></marker></defs>${e}`+ps.map((p,i)=>`<circle cx="${P[i][0]}" cy="${P[i][1]}" r="21" fill="#12162e" stroke="${r.deadlock&&r.cycle.includes(p)?"#fb7185":"#34d399"}" stroke-width="2.5"/><text x="${P[i][0]}" y="${P[i][1]+4}" text-anchor="middle" fill="#fff" font-size="12">${p}</text>`).join("")+`</svg><p>${r.deadlock?`<span class="tag r">DEADLOCK DETECTED</span> cycle: ${r.cycle.join(" → ")}`:`<span class="tag g">NO DEADLOCK</span> graph has no cycle`}</p>`}
 async function dlRecover(){const pol=$("recPolicy").value,r=await api({type:"DEADLOCK_RECOVER",policy:pol});if(!r.recovered){toast(r.reason||"No active deadlock to recover",0);return}toast(`Resolved: terminated victim ${r.victim} (${pol})`);$("recLog").innerHTML=`<div>[T=${Date.now()}] Terminated <b>${r.victim}</b> (cycle ${r.cycle.join("→")}, policy ${pol})</div>`+$("recLog").innerHTML;dlLive();refresh()}
+
+async function dfsLs(p){
+  const path=p||$("dfsPath").value||"/";
+  const r=await api({type:"FS_LS",path:path});
+  if(r.type=="ERROR")return toast(r.error,0);
+  $("dfsPath").value=path;
+  $("dfsTab").innerHTML=(r.entries||[]).map(e=>{
+    const isD=e.is_dir;
+    return `<tr><td><b style="cursor:pointer;color:var(--c)" onclick="${isD?`dfsLs('${e.path}')`:`dfsStat('${e.path}')`}">${isD?'📁':'📄'} ${e.name}</b></td><td>${isD?'DIR':'FILE'}</td><td>${isD?'—':e.size+' B'}</td><td>0o${(e.perms||0).toString(8)}</td><td>v${e.version||1}</td><td>${!isD?`<button class="ghost" onclick="dfsOpen('${e.path}')">Open</button> <button class="ghost" onclick="dfsStat('${e.path}')">Blocks</button>`:''}<button class="ghost" onclick="dfsRm('${e.path}',${isD})">✕</button></td></tr>`;
+  }).join("")||`<tr><td colspan=6 class="mut">Directory is empty</td></tr>`;
+}
+async function dfsMkdir(){
+  const p=$("dfsMkdirPath").value;
+  if(!p)return toast("Enter directory path",0);
+  const r=await api({type:"FS_MKDIR",path:p});
+  if(r.type=="ERROR")return toast(r.error,0);
+  toast("Created directory "+r.path);
+  $("dfsMkdirPath").value="";
+  dfsLs($("dfsPath").value);
+  refresh();
+}
+async function dfsStat(p){
+  const r=await api({type:"FS_STAT",path:p});
+  if(r.type=="ERROR")return toast(r.error,0);
+  const st=r.stat;
+  if(!st.blocks||!st.blocks.length){
+    $("dfsBlockDetail").innerHTML=`<div class="card"><b>${st.path}</b> (Directory or empty file)</div>`;
+    return;
+  }
+  $("dfsBlockDetail").innerHTML=`<div class="card"><h4>Block Layout for ${st.path} (${st.size} bytes, ${st.blocks.length} blocks)</h4><table><tr><th>Seq</th><th>Block ID</th><th>Size</th><th>SHA-256</th><th>Replicas</th></tr>`+st.blocks.map(b=>`<tr><td>#${b.seq}</td><td><code>${b.block_id}</code></td><td>${b.size} B</td><td><code>${b.checksum.slice(0,10)}…</code></td><td>${(b.all_nodes||b.nodes||[]).map(n=>`<span class="tag g">${n}</span>`).join(" ")}</td></tr>`).join("")+`</table></div>`;
+}
+async function dfsOpen(p){
+  const r=await api({type:"FS_READ",path:p});
+  if(r.type=="ERROR")return toast(r.error,0);
+  $("fn").value=p;
+  $("fc").value=r.content;
+  $("fsrc").innerHTML=`DFS File <b>${p}</b> (v${r.version}, ${r.blocks} blocks)`;
+  toast(`Opened ${p} from DFS`);
+}
+async function dfsRm(p,isD){
+  const r=await api({type:isD?"FS_RMDIR":"FS_DELETE",path:p});
+  if(r.type=="ERROR")return toast(r.error,0);
+  toast(`Removed ${p}`);
+  dfsLs($("dfsPath").value);
+  refresh();
+}
+async function dfsScrub(repair){
+  const r=await api({type:"FS_SCRUB",repair:repair});
+  toast(`DFS Scrub: ${r.corrupted_detected} corrupted, ${r.repaired} repaired`);
+  refresh();
+}
