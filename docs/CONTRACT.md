@@ -228,3 +228,43 @@ Every message transported over TCP or RPC carries logical timestamps:
 ### `DOCKER_STATUS`
 - **Payload**: `{}`
 - **Reply**: `{"type": "DOCKER_STATUS", "containers": [...], "mode": str, "note": str}`
+
+### `SUBMIT_TRACE`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{"type": "SUBMIT_TRACE", "algo": "srtf", "quantum": 2, "processes": [...]}`
+- **Reply**: `{"type": "SUBMITTED", "assigned": {...}, "metrics": {...}, "gantt": [...]}`
+
+### `TASK_STARTED`
+- **Sender**: Worker Node -> Coordinator
+- **Payload**: `{"type": "TASK_STARTED", "pid": "P1", "node_id": "node-1", "job_type": "primes"}`
+- **Reply**: `None`
+
+### `TASK_FAILED`
+- **Sender**: Worker Node -> Coordinator
+- **Payload**: `{"type": "TASK_FAILED", "pid": "P1", "node_id": "node-1", "error": "details"}`
+- **Reply**: `None`
+
+### `PROC_LIST`
+- **Sender**: Dashboard -> Coordinator
+- **Payload**: `{"type": "PROC_LIST"}`
+- **Reply**: `{"type": "PROC_LIST", "processes": {...}}`
+
+### `PROC_KILL`
+- **Sender**: Dashboard -> Coordinator
+- **Payload**: `{"type": "PROC_KILL", "pid": "P1"}`
+- **Reply**: `{"type": "OK", "killed": "P1"}`
+
+### `PROC_SUSPEND`
+- **Sender**: Dashboard -> Coordinator
+- **Payload**: `{"type": "PROC_SUSPEND", "pid": "P1"}`
+- **Reply**: `{"type": "OK", "suspended": "P1"}`
+
+### `PROC_RESUME`
+- **Sender**: Dashboard -> Coordinator
+- **Payload**: `{"type": "PROC_RESUME", "pid": "P1"}`
+- **Reply**: `{"type": "OK", "resumed": "P1"}`
+
+### `METRICS`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{"type": "METRICS", "policy": "srtf", "export_csv": true}`
+- **Reply**: `{"type": "METRICS_RESULT", "policy": "srtf", "measured_avg": {"waiting": 0.02, "turnaround": 0.53, "response": 0.02}, "actual_gantt": [...], "csv_exported": "metrics_srtf_12345.csv"}`

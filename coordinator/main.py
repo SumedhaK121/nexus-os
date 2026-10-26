@@ -3,6 +3,7 @@ Central control plane for cluster management, job scheduling, distributed file c
 and synchronization.
 """
 
+import csv
 import os
 import socket
 import sys
@@ -18,9 +19,9 @@ from coordinator.file_manager.file_manager import FileManager
 from coordinator.node_manager.node_manager import NodeManager
 from coordinator.process_manager.process_manager import ProcessManager
 from coordinator.resource_manager.resource_manager import ResourceManager
+from coordinator.scheduler.node_selector import pick_node
 from distributed_clock.lamport_clock import LamportClock
 
-# Check optional feature availability
 try:
     import psutil
     HAS_PSUTIL = True
@@ -48,11 +49,16 @@ class Coordinator:
         self.nodes = {}            # node_id -> {conn, last_seen, cpu, load, done, status, addr}
         self.tasks = {}            # task_id -> {node, state, burst, ...}
         self.events = []           # Lamport-stamped event log
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.handlers = {}
         self.banker = None
         self.files = FileManager()
         self.net = {}
+
+        # Scheduling & process metrics
+        self.active_policy = "fcfs"
+        self.measured_metrics = [] # list of completed task metrics
+        self.actual_gantt = []     # list of (pid, start_t, end_t, node)
 
         # Core subsystem managers
         self.node_mgr = NodeManager()
@@ -75,8 +81,36 @@ class Coordinator:
 
     def _on_node_down(self, node_id):
         self.log("coordinator", f"Node failure detected: {node_id} is OFFLINE")
+        rescheduled = []
         with self.lock:
             self.res_mgr.update_cluster_capacity(self.nodes)
+            online = self.node_mgr.online(self.nodes)
+            for pid, task in list(self.tasks.items()):
+                if task.get("node") == node_id and task.get("state") in ("Running", "Ready", "WAITING"):
+                    if online:
+                        new_nid = pick_node(self.nodes, online)
+                        task["node"] = new_nid
+                        task["state"] = "Running"
+                        self.nodes[new_nid]["load"] += task.get("burst", 1)
+                        exec_msg = {
+                            "type": "EXEC",
+                            "pid": pid,
+                            "burst": task.get("burst", 1),
+                            "job_type": task.get("job_type", "sim"),
+                            "args": task.get("args", []),
+                            "ts": self.clock.tick(),
+                        }
+                        try:
+                            if self.nodes[new_nid].get("conn"):
+                                self.nodes[new_nid]["conn"].send(exec_msg)
+                        except Exception:
+                            pass
+                        rescheduled.append((pid, new_nid))
+                        pcb = self.proc_mgr.get(pid)
+                        if pcb:
+                            pcb.node = new_nid
+        if rescheduled:
+            self.log("scheduler", f"Rescheduled tasks after {node_id} failure: {rescheduled}")
 
     def _on_node_up(self, node_id):
         self.log("coordinator", f"Node joined or recovered: {node_id} is ONLINE")

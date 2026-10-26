@@ -1,8 +1,11 @@
 """NEXUS-OS Core API Handlers.
-Implements REGISTER, HEARTBEAT, SUBMIT, TASK_DONE, COMPARE, STATUS, PEERS.
-Concept: Control plane coordination, process admission, health monitoring, and peer discovery.
+Implements REGISTER, HEARTBEAT, SUBMIT, SUBMIT_TRACE, TASK_STARTED, TASK_DONE, TASK_FAILED,
+COMPARE, STATUS, PEERS, PROC_LIST, PROC_KILL, PROC_SUSPEND, PROC_RESUME.
+Concept: Process Control Blocks (PCB), CPU scheduling, process lifecycle, and peer discovery.
 """
 
+import json
+import os
 import time
 from coordinator.scheduler import scheduler_manager as scheduler
 from coordinator.scheduler.node_selector import pick_node
@@ -58,16 +61,21 @@ def register(coord):
 
     @coord.handler("SUBMIT")
     def _submit(c, ctx, m):
-        procs, algo = m["processes"], m.get("algo", "fcfs")
+        procs = m["processes"]
+        algo = m.get("algo", "fcfs")
         quantum = m.get("quantum", 2)
+        c.active_policy = algo
+
         result = scheduler.run(algo, procs, quantum)
         by_pid = {p["pid"]: p for p in procs}
+
+        # Order determined by scheduler Gantt
         order = []
         for item in result["gantt"]:
             pid = item[0]
             if pid not in order:
                 order.append(pid)
-        c.log("scheduler", f"{result['algo']} order: {order}")
+        c.log("scheduler", f"Policy {algo.upper()} dispatch order: {order}")
 
         with c.lock:
             online = node_manager.online(c.nodes)
@@ -75,6 +83,7 @@ def register(coord):
             return {"type": "ERROR", "error": "no nodes online"}
 
         assigned = {}
+        now = time.time()
         with c.lock:
             for pid in order:
                 nid = pick_node(c.nodes, online)
@@ -84,12 +93,13 @@ def register(coord):
                     "node": nid,
                     "state": "Running",
                     "burst": burst,
-                    "submit_time": time.time(),
+                    "submit_time": now,
+                    "start_time": None,
                     "job_type": by_pid[pid].get("job_type", "sim"),
                     "args": by_pid[pid].get("args", []),
+                    "priority": by_pid[pid].get("priority", 1),
                 }
                 assigned[pid] = nid
-                # Update process manager PCB if present
                 if hasattr(c, "proc_mgr"):
                     pcb = c.proc_mgr.get(pid)
                     if not pcb:
@@ -105,11 +115,12 @@ def register(coord):
                         )
                     pcb.node = nid
                     try:
+                        pcb.set_state("READY")
                         pcb.set_state("RUNNING")
                     except ValueError:
                         pass
 
-                # Dispatch EXEC to worker node
+                # Dispatch EXEC to worker
                 exec_msg = {
                     "type": "EXEC",
                     "pid": pid,
@@ -119,7 +130,7 @@ def register(coord):
                     "ts": c.clock.tick(),
                 }
                 c.nodes[nid]["conn"].send(exec_msg)
-                c.log("scheduler", f"{pid} -> {nid}")
+                c.log("scheduler", f"{pid} -> {nid} ({by_pid[pid].get('job_type', 'sim')})")
 
         return {
             "type": "SUBMITTED",
@@ -128,31 +139,186 @@ def register(coord):
             "gantt": result["gantt"],
         }
 
+    @coord.handler("SUBMIT_TRACE")
+    def _submit_trace(c, ctx, m):
+        trace_path = m.get("path")
+        procs = m.get("processes")
+        if not procs and trace_path and os.path.exists(trace_path):
+            with open(trace_path, "r", encoding="utf-8") as f:
+                procs = json.load(f)
+        if not procs:
+            # Fall back to default lab trace
+            default_trace = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "demo", "lab_trace.json")
+            if os.path.exists(default_trace):
+                with open(default_trace, "r", encoding="utf-8") as f:
+                    procs = json.load(f)
+            else:
+                return {"type": "ERROR", "error": "No workload trace specified"}
+
+        algo = m.get("algo", "fcfs")
+        quantum = m.get("quantum", 2)
+        return _submit(c, ctx, {"processes": procs, "algo": algo, "quantum": quantum})
+
+    @coord.handler("TASK_STARTED")
+    def _started(c, ctx, m):
+        pid = m["pid"]
+        now = time.time()
+        with c.lock:
+            if pid in c.tasks:
+                if c.tasks[pid]["start_time"] is None:
+                    c.tasks[pid]["start_time"] = now
+                c.tasks[pid]["state"] = "Running"
+            if hasattr(c, "proc_mgr"):
+                pcb = c.proc_mgr.get(pid)
+                if pcb and pcb.start_time is None:
+                    pcb.start_time = now
+        c.log(m.get("node_id", "node"), f"started execution of {pid}")
+        return None
+
     @coord.handler("TASK_DONE")
     def _done(c, ctx, m):
         pid = m.get("pid")
         node_id = ctx.node_id or m.get("node_id")
+        now = time.time()
         with c.lock:
             if pid not in c.tasks:
                 c.log("coordinator", f"TASK_DONE ignored for unknown pid: {pid}")
                 return None
-            c.tasks[pid]["state"] = "Completed"
+            task = c.tasks[pid]
+            task["state"] = "Completed"
+            task["end_time"] = now
+            if task.get("start_time") is None:
+                task["start_time"] = now - m.get("wall_time", 0.5)
+
+            submit_time = task.get("submit_time", task["start_time"])
+            start_time = task["start_time"]
+            waiting_time = max(0.0, start_time - submit_time)
+            turnaround_time = max(0.0, now - submit_time)
+            response_time = waiting_time
+
+            # Record actual Gantt slice: (pid, start, finish, node)
+            c.actual_gantt.append((pid, round(start_time, 2), round(now, 2), node_id))
+            c.measured_metrics.append({
+                "pid": pid,
+                "policy": getattr(c, "active_policy", "fcfs"),
+                "submit_time": round(submit_time, 2),
+                "start_time": round(start_time, 2),
+                "end_time": round(now, 2),
+                "waiting_time": round(waiting_time, 3),
+                "turnaround_time": round(turnaround_time, 3),
+                "response_time": round(response_time, 3),
+                "cpu_time": m.get("cpu_time", 0.0),
+                "wall_time": m.get("wall_time", turnaround_time),
+            })
+
             if node_id and node_id in c.nodes:
-                c.nodes[node_id]["load"] = max(0, c.nodes[node_id]["load"] - c.tasks[pid].get("burst", 0))
+                c.nodes[node_id]["load"] = max(0, c.nodes[node_id]["load"] - task.get("burst", 0))
                 c.nodes[node_id]["done"] += 1
+
             if hasattr(c, "proc_mgr"):
                 try:
                     c.proc_mgr.transition(pid, "COMPLETED")
                 except Exception:
                     pass
-        c.log(node_id or "node", f"completed {pid}")
+
+        c.log(node_id or "node", f"completed {pid} (turnaround={turnaround_time:.2f}s)")
         return None
+
+    @coord.handler("TASK_FAILED")
+    def _failed(c, ctx, m):
+        pid = m.get("pid")
+        node_id = ctx.node_id or m.get("node_id")
+        with c.lock:
+            if pid in c.tasks:
+                c.tasks[pid]["state"] = "Failed"
+                c.tasks[pid]["error"] = m.get("error")
+            if node_id and node_id in c.nodes:
+                c.nodes[node_id]["load"] = max(0, c.nodes[node_id]["load"] - c.tasks.get(pid, {}).get("burst", 0))
+            if hasattr(c, "proc_mgr"):
+                try:
+                    c.proc_mgr.transition(pid, "FAILED")
+                except Exception:
+                    pass
+        c.log(node_id or "node", f"task {pid} FAILED: {m.get('error')}")
+        return None
+
+    @coord.handler("PROC_LIST")
+    def _proc_list(c, ctx, m):
+        with c.lock:
+            if hasattr(c, "proc_mgr"):
+                return {"type": "PROC_LIST", "processes": c.proc_mgr.list_all()}
+            return {"type": "PROC_LIST", "processes": dict(c.tasks)}
+
+    @coord.handler("PROC_KILL")
+    def _proc_kill(c, ctx, m):
+        pid = m.get("pid")
+        target_node = None
+        with c.lock:
+            task = c.tasks.get(pid)
+            if task:
+                target_node = task.get("node")
+                task["state"] = "Killed"
+            if hasattr(c, "proc_mgr"):
+                try:
+                    c.proc_mgr.transition(pid, "KILLED")
+                except Exception:
+                    pass
+        if target_node and target_node in c.nodes:
+            conn = c.nodes[target_node].get("conn")
+            if conn:
+                conn.send({"type": "PROC_KILL", "pid": pid, "ts": c.clock.tick()})
+        c.log("coordinator", f"PROC_KILL issued for PID {pid} on {target_node}")
+        return {"type": "OK", "killed": pid}
+
+    @coord.handler("PROC_SUSPEND")
+    def _proc_suspend(c, ctx, m):
+        pid = m.get("pid")
+        target_node = None
+        with c.lock:
+            task = c.tasks.get(pid)
+            if task:
+                target_node = task.get("node")
+                task["state"] = "Waiting"
+            if hasattr(c, "proc_mgr"):
+                try:
+                    c.proc_mgr.transition(pid, "WAITING")
+                except Exception:
+                    pass
+        if target_node and target_node in c.nodes:
+            conn = c.nodes[target_node].get("conn")
+            if conn:
+                conn.send({"type": "PROC_SUSPEND", "pid": pid, "ts": c.clock.tick()})
+        c.log("coordinator", f"PROC_SUSPEND issued for PID {pid}")
+        return {"type": "OK", "suspended": pid}
+
+    @coord.handler("PROC_RESUME")
+    def _proc_resume(c, ctx, m):
+        pid = m.get("pid")
+        target_node = None
+        with c.lock:
+            task = c.tasks.get(pid)
+            if task:
+                target_node = task.get("node")
+                task["state"] = "Running"
+            if hasattr(c, "proc_mgr"):
+                try:
+                    c.proc_mgr.transition(pid, "READY")
+                    c.proc_mgr.transition(pid, "RUNNING")
+                except Exception:
+                    pass
+        if target_node and target_node in c.nodes:
+            conn = c.nodes[target_node].get("conn")
+            if conn:
+                conn.send({"type": "PROC_RESUME", "pid": pid, "ts": c.clock.tick()})
+        c.log("coordinator", f"PROC_RESUME issued for PID {pid}")
+        return {"type": "OK", "resumed": pid}
 
     @coord.handler("COMPARE")
     def _cmp(c, ctx, m):
         procs = m["processes"]
         quantum = m.get("quantum", 2)
-        results = scheduler.compare(procs, quantum)
+        extended = m.get("extended", True)
+        results = scheduler.compare(procs, quantum, extended=extended)
         return {
             "type": "COMPARED",
             "results": [{"algo": r["algo"], **r["avg"], "gantt": r["gantt"]} for r in results],
@@ -181,6 +347,9 @@ def register(coord):
                 }
                 if "addr" in v:
                     nodes_status[k]["addr"] = v["addr"]
+                if "mem" in v:
+                    nodes_status[k]["mem"] = v["mem"]
+
             tasks_dict = dict(c.tasks)
             events_list = c.events[-60:]
             files_list = c.files.listing() if hasattr(c, "files") else {}
@@ -200,11 +369,20 @@ def register(coord):
                 else None
             )
 
+            # Detailed process table for dashboard
+            pcb_table = (
+                c.proc_mgr.list_all()
+                if hasattr(c, "proc_mgr")
+                else {pid: {"pid": pid, "state": t["state"], "node": t.get("node", "—"), "burst": t.get("burst", 1)}
+                      for pid, t in tasks_dict.items()}
+            )
+
             return {
                 "type": "STATUS",
                 "clock": c.clock.t,
                 "nodes": nodes_status,
                 "tasks": tasks_dict,
+                "proc_table": pcb_table,
                 "events": events_list,
                 "files": files_list,
                 "util": util_data,
@@ -214,4 +392,6 @@ def register(coord):
                 "cache": cache_stats,
                 "replicas": rep_placement,
                 "banker": banker_data,
+                "policy": getattr(c, "active_policy", "fcfs"),
+                "metrics_count": len(getattr(c, "measured_metrics", [])),
             }

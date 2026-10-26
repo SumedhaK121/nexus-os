@@ -1,9 +1,12 @@
-"""NEXUS-OS Node: registers, sends heartbeats, executes tasks pushed by the coordinator,
-and runs an internal RPC server for peer-to-peer data plane interactions.
+"""NEXUS-OS Worker Node.
+Handles registration, real process execution via subprocess & psutil,
+heartbeat telemetry, and local RPC server for inter-node communication.
+Concept: Worker node daemon (similar to Kubernetes kubelet / Slurm slurmd).
 """
 
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -13,7 +16,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from communication.tcp_client import Conn
 from communication import rpc
 from distributed_clock.lamport_clock import LamportClock
+from jobs import catalog
 from nodes.node_server import NodeServer
+
+try:
+    import psutil
+    HAS_PSUTIL = True
+except ImportError:
+    HAS_PSUTIL = False
 
 
 class Node:
@@ -25,8 +35,17 @@ class Node:
         self.running = True
         self.conn = None
 
-        # Start internal RPC server on an OS-assigned free port
+        # Data directory for this node
+        self.data_dir = os.environ.get("NEXUS_DATA_DIR", os.path.join("storage", self.id))
+        os.makedirs(self.data_dir, exist_ok=True)
+
+        # Process tracking table
+        self.local_procs = {}  # pid -> {popen, psutil, start, job_type}
+        self.proc_lock = threading.Lock()
+
+        # Start internal RPC server on an ephemeral port
         self.server = NodeServer(host=os.environ.get("NEXUS_BIND", "127.0.0.1"), port=0)
+        self._register_rpc_methods()
         self.rpc_port = self.server.start()
 
         # Node hardware capacities
@@ -34,7 +53,7 @@ class Node:
         self.mem_mb = int(os.environ.get("NEXUS_MEM_MB", 256))
         self.io_slots = int(os.environ.get("NEXUS_IO_SLOTS", 2))
 
-        # Connect to coordinator with retries
+        # Connect to coordinator
         for _ in range(30):
             try:
                 self.conn = Conn(socket.create_connection((host, port)))
@@ -44,13 +63,55 @@ class Node:
         if not self.conn:
             print(f"[{self.id}] Failed to connect to coordinator at {host}:{port}", flush=True)
 
+    def _register_rpc_methods(self):
+        """Register local RPC methods accessible by peers or coordinator."""
+        self.server.register_method("PING", lambda p: {"type": "PONG", "node_id": self.id})
+        self.server.register_method("PROC_KILL", self._rpc_kill)
+        self.server.register_method("PROC_SUSPEND", self._rpc_suspend)
+        self.server.register_method("PROC_RESUME", self._rpc_resume)
+
+    def _rpc_kill(self, payload):
+        pid = payload.get("pid")
+        with self.proc_lock:
+            entry = self.local_procs.get(pid)
+            if entry and entry["popen"]:
+                try:
+                    entry["popen"].kill()
+                    return {"type": "OK", "killed": pid}
+                except Exception as e:
+                    return {"type": "ERROR", "error": str(e)}
+        return {"type": "ERROR", "error": f"PID {pid} not found on {self.id}"}
+
+    def _rpc_suspend(self, payload):
+        pid = payload.get("pid")
+        with self.proc_lock:
+            entry = self.local_procs.get(pid)
+            if entry and entry.get("psutil"):
+                try:
+                    entry["psutil"].suspend()
+                    return {"type": "OK", "suspended": pid}
+                except Exception as e:
+                    return {"type": "ERROR", "error": str(e)}
+        return {"type": "ERROR", "error": f"psutil handle not available for PID {pid}"}
+
+    def _rpc_resume(self, payload):
+        pid = payload.get("pid")
+        with self.proc_lock:
+            entry = self.local_procs.get(pid)
+            if entry and entry.get("psutil"):
+                try:
+                    entry["psutil"].resume()
+                    return {"type": "OK", "resumed": pid}
+                except Exception as e:
+                    return {"type": "ERROR", "error": str(e)}
+        return {"type": "ERROR", "error": f"psutil handle not available for PID {pid}"}
+
     def send(self, msg):
         msg["ts"] = self.clock.tick()
         if self.conn:
             self.conn.send(msg)
 
     def run(self):
-        # Register with coordinator including RPC server port and capacities
         reg_payload = {
             "type": "REGISTER",
             "node_id": self.id,
@@ -61,10 +122,10 @@ class Node:
         }
         self.send(reg_payload)
 
-        # Start periodic heartbeat thread
+        # Heartbeat loop
         threading.Thread(target=self._heartbeat, daemon=True).start()
 
-        # Main message loop from coordinator
+        # Coordinator message receiver loop
         while self.running and self.conn:
             try:
                 msg = self.conn.recv()
@@ -74,25 +135,127 @@ class Node:
                 break
             self.clock.update(msg.get("ts", 0))
             mtype = msg.get("type")
+
             if mtype == "EXEC":
                 threading.Thread(target=self._exec, args=(msg,), daemon=True).start()
+            elif mtype == "PROC_KILL":
+                self._rpc_kill(msg)
+            elif mtype == "PROC_SUSPEND":
+                self._rpc_suspend(msg)
+            elif mtype == "PROC_RESUME":
+                self._rpc_resume(msg)
             elif mtype == "REGISTERED":
-                # Request peers
                 self.send({"type": "PEERS"})
             elif mtype == "PEERS":
                 rpc.update_peer_cache(msg.get("peers", {}))
 
     def _exec(self, m):
-        print(f"[{self.id}] T={self.clock.t} running {m['pid']} (burst {m['burst']})", flush=True)
-        # Phase 0 simulated CPU work (Phase 1 will add real subprocess execution)
-        time.sleep(m["burst"] * 0.3)
-        self.send({"type": "TASK_DONE", "pid": m["pid"]})
+        pid = m["pid"]
+        job_type = m.get("job_type", "sim")
+        burst = m.get("burst", 1)
+        args = m.get("args", [])
+        print(f"[{self.id}] T={self.clock.t} EXEC {pid} ({job_type}, burst={burst})", flush=True)
+
+        if job_type == "sim":
+            # Backward-compatible synthetic sleep execution
+            time.sleep(burst * 0.3)
+            self.send({"type": "TASK_DONE", "pid": pid, "node_id": self.id, "burst": burst})
+            return
+
+        cmd = catalog.get_command(job_type, args)
+        if not cmd:
+            time.sleep(burst * 0.3)
+            self.send({"type": "TASK_DONE", "pid": pid, "node_id": self.id, "burst": burst})
+            return
+
+        # Real process spawn
+        self.send({"type": "TASK_STARTED", "pid": pid, "node_id": self.id, "job_type": job_type})
+        start_time = time.time()
+        try:
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            ps_proc = None
+            if HAS_PSUTIL:
+                try:
+                    ps_proc = psutil.Process(p.pid)
+                except Exception:
+                    pass
+
+            with self.proc_lock:
+                self.local_procs[pid] = {
+                    "popen": p,
+                    "psutil": ps_proc,
+                    "start": start_time,
+                    "job_type": job_type,
+                    "burst": burst,
+                }
+
+            stdout, stderr = p.communicate()
+            end_time = time.time()
+            wall_time = end_time - start_time
+            cpu_time = wall_time
+            if ps_proc:
+                try:
+                    c_times = ps_proc.cpu_times()
+                    cpu_time = c_times.user + c_times.system
+                except Exception:
+                    pass
+
+            with self.proc_lock:
+                self.local_procs.pop(pid, None)
+
+            if p.returncode == 0:
+                self.send({
+                    "type": "TASK_DONE",
+                    "pid": pid,
+                    "node_id": self.id,
+                    "exit_code": 0,
+                    "wall_time": round(wall_time, 3),
+                    "cpu_time": round(cpu_time, 3),
+                    "burst": burst,
+                })
+            else:
+                err_msg = stderr.decode(errors="replace").strip() if stderr else f"Exit code {p.returncode}"
+                self.send({
+                    "type": "TASK_FAILED",
+                    "pid": pid,
+                    "node_id": self.id,
+                    "exit_code": p.returncode,
+                    "error": err_msg,
+                })
+        except Exception as e:
+            with self.proc_lock:
+                self.local_procs.pop(pid, None)
+            self.send({
+                "type": "TASK_FAILED",
+                "pid": pid,
+                "node_id": self.id,
+                "error": str(e),
+            })
 
     def _heartbeat(self):
         while self.running:
-            cpu = round(os.getloadavg()[0] * 10, 1) if hasattr(os, "getloadavg") else 0.0
+            cpu = 0.0
+            mem = 0.0
+            if HAS_PSUTIL:
+                try:
+                    cpu = psutil.cpu_percent(interval=None)
+                    mem = psutil.virtual_memory().percent
+                except Exception:
+                    pass
+            elif hasattr(os, "getloadavg"):
+                cpu = round(os.getloadavg()[0] * 10, 1)
+
+            with self.proc_lock:
+                running_count = len(self.local_procs)
+
             try:
-                self.send({"type": "HEARTBEAT", "cpu": cpu, "node_id": self.id})
+                self.send({
+                    "type": "HEARTBEAT",
+                    "node_id": self.id,
+                    "cpu": cpu,
+                    "mem": mem,
+                    "load": running_count,
+                })
             except OSError:
                 return
             time.sleep(2)
