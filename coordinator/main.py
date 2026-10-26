@@ -180,7 +180,7 @@ class Coordinator:
             conn.close()
 
     def _monitor(self):
-        """Failure detection: marks node OFFLINE if no heartbeat received for > 6s."""
+        """Failure detection and periodic resource / deadlock monitoring."""
         while True:
             time.sleep(2)
             with self.lock:
@@ -189,6 +189,12 @@ class Coordinator:
                         n["status"] = "OFFLINE"
                         self.node_mgr.mark_offline(nid)
                         print(f"!! {nid} marked OFFLINE (heartbeat timeout)", flush=True)
+
+            if hasattr(self, "res_mgr"):
+                self.res_mgr.record_snapshot()
+                cycles = self.res_mgr.detect_cycles()
+                if cycles:
+                    print(f"!! [Deadlock Monitor] {len(cycles)} deadlock cycle(s) active: {cycles}", flush=True)
 
 
 if __name__ == "__main__":
