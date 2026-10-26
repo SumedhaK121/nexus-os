@@ -4,6 +4,7 @@ and block replica mappings into SQLite (database/metadata.db).
 Concept: NameNode metadata management with persistent write-ahead logging (HDFS NameNode fsimage/edits).
 """
 
+import json
 import os
 import sqlite3
 import threading
@@ -43,9 +44,14 @@ class DfsMetadataStore:
                     version INTEGER NOT NULL DEFAULT 1,
                     created REAL NOT NULL,
                     modified REAL NOT NULL,
-                    checksum TEXT DEFAULT ''
+                    checksum TEXT DEFAULT '',
+                    vector_clock TEXT DEFAULT '{}'
                 )
             """)
+            cur.execute("PRAGMA table_info(inodes)")
+            cols = [r[1] for r in cur.fetchall()]
+            if 'vector_clock' not in cols:
+                cur.execute("ALTER TABLE inodes ADD COLUMN vector_clock TEXT DEFAULT '{}'")
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS blocks (
                     block_id TEXT PRIMARY KEY,
@@ -70,7 +76,7 @@ class DfsMetadataStore:
             if not cur.fetchone():
                 now = time.time()
                 cur.execute(
-                    "INSERT INTO inodes VALUES ('/', 1, 0, 'root', ?, 1, ?, ?, '')",
+                    "INSERT INTO inodes (path, is_dir, size, owner, perms, version, created, modified, checksum, vector_clock) VALUES ('/', 1, 0, 'root', ?, 1, ?, ?, '', '{}')",
                     (0o777, now, now)
                 )
             conn.commit()
@@ -120,7 +126,7 @@ class DfsMetadataStore:
                     cur.execute("SELECT is_dir FROM inodes WHERE path = ?", (accum,))
                     if not cur.fetchone():
                         cur.execute(
-                            "INSERT INTO inodes VALUES (?, 1, 0, ?, ?, 1, ?, ?, '')",
+                            "INSERT INTO inodes (path, is_dir, size, owner, perms, version, created, modified, checksum, vector_clock) VALUES (?, 1, 0, ?, ?, 1, ?, ?, '', '{}')",
                             (accum, owner, perms, now, now)
                         )
             else:
@@ -134,7 +140,7 @@ class DfsMetadataStore:
                         return False, f"Parent directory {parent_norm} does not exist"
 
             cur.execute(
-                "INSERT INTO inodes VALUES (?, 1, 0, ?, ?, 1, ?, ?, '')",
+                "INSERT INTO inodes (path, is_dir, size, owner, perms, version, created, modified, checksum, vector_clock) VALUES (?, 1, 0, ?, ?, 1, ?, ?, '', '{}')",
                 (path, owner, perms, now, now)
             )
             conn.commit()
@@ -264,7 +270,7 @@ class DfsMetadataStore:
             conn.close()
             return True, dst
 
-    def put_file_metadata(self, path, size, blocks_info, owner="root", perms=0o644, checksum=""):
+    def put_file_metadata(self, path, size, blocks_info, owner="root", perms=0o644, checksum="", vector_clock=None):
         """Records file inode and its associated block mappings."""
         path = self._norm(path)
         with self.lock:
@@ -280,7 +286,7 @@ class DfsMetadataStore:
                 cur.execute("SELECT is_dir FROM inodes WHERE path = ?", (accum,))
                 if not cur.fetchone():
                     cur.execute(
-                        "INSERT INTO inodes VALUES (?, 1, 0, ?, ?, 1, ?, ?, '')",
+                        "INSERT INTO inodes (path, is_dir, size, owner, perms, version, created, modified, checksum, vector_clock) VALUES (?, 1, 0, ?, ?, 1, ?, ?, '', '{}')",
                         (accum, owner, 0o755, now, now)
                     )
 
@@ -289,9 +295,10 @@ class DfsMetadataStore:
             version = (row["version"] + 1) if row else 1
 
             if row:
+                vc_str = json.dumps(vector_clock) if isinstance(vector_clock, dict) else (str(vector_clock) if vector_clock else "{}")
                 cur.execute(
-                    "UPDATE inodes SET size = ?, version = ?, modified = ?, checksum = ? WHERE path = ?",
-                    (size, version, now, checksum, path)
+                    "UPDATE inodes SET size = ?, version = ?, modified = ?, checksum = ?, vector_clock = ? WHERE path = ?",
+                    (size, version, now, checksum, vc_str, path)
                 )
                 # Remove old block mappings
                 cur.execute("SELECT block_id FROM blocks WHERE path = ?", (path,))
@@ -300,9 +307,10 @@ class DfsMetadataStore:
                     cur.execute("DELETE FROM block_replicas WHERE block_id = ?", (b_id,))
                 cur.execute("DELETE FROM blocks WHERE path = ?", (path,))
             else:
+                vc_str = json.dumps(vector_clock) if isinstance(vector_clock, dict) else (str(vector_clock) if vector_clock else "{}")
                 cur.execute(
-                    "INSERT INTO inodes VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?)",
-                    (path, size, owner, perms, version, now, now, checksum)
+                    "INSERT INTO inodes (path, is_dir, size, owner, perms, version, created, modified, checksum, vector_clock) VALUES (?, 0, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (path, size, owner, perms, version, now, now, checksum, vc_str)
                 )
 
             # Insert blocks and replicas
@@ -333,6 +341,16 @@ class DfsMetadataStore:
                 conn.close()
                 return None
             res = dict(row)
+            vc_val = res.get("vector_clock", "{}")
+            if isinstance(vc_val, str):
+                try:
+                    res["vector_clock"] = json.loads(vc_val)
+                except Exception:
+                    res["vector_clock"] = {}
+            elif isinstance(vc_val, dict):
+                res["vector_clock"] = vc_val
+            else:
+                res["vector_clock"] = {}
 
             # Fetch blocks in sequence
             cur.execute("SELECT * FROM blocks WHERE path = ? ORDER BY seq", (path,))

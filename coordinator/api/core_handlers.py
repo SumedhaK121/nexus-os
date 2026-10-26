@@ -390,6 +390,7 @@ def register(coord):
                 "dfs_node_counts": dfs_node_counts,
                 "dfs_under_replicated": dfs_under_rep,
                 "locks": c.locks.get_status() if hasattr(c, "locks") else {},
+                "sync": c.sync_mgr.get_stats() if hasattr(c, "sync_mgr") else {},
                 "util": util_data,
                 "procs": procs_data,
                 "safe": safe_flag,

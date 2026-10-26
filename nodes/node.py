@@ -22,6 +22,7 @@ from jobs import catalog
 from nodes.block_store import BlockStore
 from nodes.node_server import NodeServer
 from nodes.ra_participant import RaParticipant
+from nodes.sync_agent import SyncAgent
 
 try:
     import psutil
@@ -65,6 +66,20 @@ class Node:
         self.cpu_slots = int(os.environ.get("NEXUS_CPU_SLOTS", 2))
         self.mem_mb = int(os.environ.get("NEXUS_MEM_MB", 256))
         self.io_slots = int(os.environ.get("NEXUS_IO_SLOTS", 2))
+
+
+        # Dropbox-Lite Sync Agent
+        sync_folder = os.path.join(self.data_dir, "sync")
+        self.sync_agent = SyncAgent(
+            node_id=self.id,
+            sync_dir=sync_folder,
+            coord_client=self.call_coord,
+            poll_interval=float(os.environ.get("NEXUS_SYNC_POLL", 1.0)),
+            workers=int(os.environ.get("NEXUS_SYNC_WORKERS", 2)),
+            policy=os.environ.get("NEXUS_SYNC_POLICY", "SJF"),
+        )
+        if os.environ.get("NEXUS_SYNC_AUTOSTART", "1") == "1":
+            self.sync_agent.start()
 
         # Connect to coordinator
         for _ in range(30):
@@ -152,6 +167,18 @@ class Node:
                 except Exception as e:
                     return {"type": "ERROR", "error": str(e)}
         return {"type": "ERROR", "error": f"psutil handle not available for PID {pid}"}
+
+
+    def call_coord(self, msg):
+        """Synchronously calls coordinator using TCP Client."""
+        from communication.tcp_client import Client
+        try:
+            client = Client(host=self.host, port=self.coord_port, client_id=self.id)
+            res = client.call(msg)
+            client.close()
+            return res
+        except Exception as e:
+            return {"type": "ERROR", "error": f"Failed to call coordinator: {e}"}
 
     def send(self, msg):
         msg["ts"] = self.clock.tick()
@@ -277,6 +304,18 @@ class Node:
                 "node_id": self.id,
                 "error": str(e),
             })
+
+    def stop(self):
+        self.running = False
+        if hasattr(self, "sync_agent"):
+            self.sync_agent.stop()
+        if hasattr(self, "server"):
+            self.server.stop()
+        if self.conn:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
 
     def _heartbeat(self):
         while self.running:

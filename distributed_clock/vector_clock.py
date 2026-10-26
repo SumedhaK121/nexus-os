@@ -97,6 +97,14 @@ class VectorClock:
         other_dict = other.to_dict() if isinstance(other, VectorClock) else other
         return self.compare(self.to_dict(), other_dict)
 
+    @classmethod
+    def are_concurrent(cls, vc1, vc2):
+        return cls.compare(vc1, vc2) == cls.REL_CONCURRENT
+
+    @classmethod
+    def happens_before(cls, vc1, vc2):
+        return cls.compare(vc1, vc2) == cls.REL_BEFORE
+
 
 def happens_before(vc1, vc2):
     """Returns True if vc1 strictly happened before vc2."""

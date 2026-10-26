@@ -336,3 +336,62 @@
   # In web dashboard, navigate to Sync tab to test Distributed Locks and run "▶ Run Real Ricart-Agrawala Cluster Demo"
   ```
 - **Known Gaps**: Sync engine (Dropbox-Lite) with folder watcher, chunk-level delta synchronization, and vector clock conflict copies to be implemented in Phase 7.
+
+
+---
+
+## Phase 7: Sync Engine ("Dropbox-Lite")
+- **Branch**: `phase-7-sync` (merged into `main`)
+- **Tag**: `phase-7-complete`
+- **Completed**: Yes
+- **What Was Done**:
+  1. Implemented local sync agent in `nodes/sync_agent.py`:
+     - Watches `storage/<node_id>/sync/` using recursive filesystem polling.
+     - Detects `CREATE`, `MODIFY`, and `DELETE` events by comparing size, mtime, and SHA-256 hashes against an in-memory snapshot.
+     - Buffers change events into Phase 4's `BoundedQueue` (producer) providing flow control and queue back-pressure.
+     - Employs a worker pool (consumers) governed by `CountingSemaphore` to rate-limit in-flight network transfers.
+     - Transfer job scheduling via `scheduler_manager.pick_next(pending_transfers, policy=self.policy)`: dispatches shortest transfer job first (`burst = size`) under `policy="SJF"`, minimizing average sync latency compared to `FCFS`.
+     - Incremental rsync delta sync: chunks files into 64KB blocks, queries coordinator `SYNC_CHECK_CHUNKS` for missing chunk indices, and transmits only modified/missing blocks.
+     - Distributed locking: acquires `file:/sync/<rel_path>` lock before writes and releases upon completion.
+     - Vector clock ticking on local changes and snapshot tracking.
+  2. Implemented cluster sync manager in `coordinator/file_manager/sync_manager.py`:
+     - Coordinates cluster-level Dropbox-Lite operations across nodes and integrates with DFS metadata.
+     - Tracks bandwidth metrics: `bytes_transferred`, `bytes_saved`, `full_bytes`, `savings_pct`.
+     - Vector Clock Concurrency evaluation via `VectorClock.compare(cur_vc, new_vc)`:
+       - If `CONCURRENT`: detects conflict, increments `conflicts_detected`, generates conflicted copy `<stem> (conflict <node_id> T=<Lamport_T>)<ext>`, logs to coordinator event log, and preserves original file.
+       - If `BEFORE` / dominating: fast-forwards update without conflict.
+     - End-to-end 4-step automated demonstration `run_sync_demo()`.
+  3. Integrated into worker node (`nodes/node.py`):
+     - Starts `SyncAgent` on node startup watching `storage/<node_id>/sync/`.
+     - Exposes node RPC endpoints: `SyncStatus`, `SyncScan`, `SyncPull`.
+     - Added clean `stop()` method to terminate agent and threads.
+  4. Added Coordinator API Handlers in `coordinator/api/sync_handlers.py`:
+     - `SYNC_CHECK_CHUNKS`, `SYNC_PUSH`, `SYNC_PULL`, `SYNC_DELETE`, `SYNC_STATUS`, `SYNC_CONFIG`, `SYNC_ENGINE_DEMO`.
+  5. Upgraded Dashboard UI in `dashboard/static/index.html` and `dashboard/static/script.js`:
+     - Added Distributed Sync Engine (Dropbox-Lite) panel.
+     - Headline metric bar displaying active policy, total syncs, bytes transferred, bytes saved vs full copy, savings percentage, and conflict count.
+     - Policy selector (SJF vs FCFS).
+     - Interactive Dropbox-Lite demonstration runner with step-by-step trace output.
+  6. Comprehensive test suite in `tests/test_phase7_sync.py` (7 unit tests covering change detection, rsync chunk delta sync bandwidth savings, vector clock conflict copy creation, causal fast-forward, SJF vs FCFS transfer scheduling, BoundedQueue back-pressure, and sync demo scenario).
+- **Files Changed/Created**:
+  - `coordinator/file_manager/sync_manager.py`
+  - `nodes/sync_agent.py`
+  - `coordinator/file_manager/dfs_metadata.py`
+  - `coordinator/file_manager/dfs_manager.py`
+  - `coordinator/main.py`
+  - `coordinator/api/core_handlers.py`
+  - `coordinator/api/sync_handlers.py`
+  - `nodes/node.py`
+  - `distributed_clock/vector_clock.py`
+  - `dashboard/static/index.html`
+  - `dashboard/static/script.js`
+  - `tests/test_phase7_sync.py`
+  - `docs/CONTRACT.md`
+  - `docs/PROGRESS.md`
+- **How to Try It**:
+  ```bash
+  python -m unittest discover -s tests
+  python app.py
+  # In web dashboard, navigate to Sync tab to view Dropbox-Lite metrics and click "▶ Run Dropbox-Lite Sync Demo"
+  ```
+- **Known Gaps**: gRPC transport stubs, protobuf definitions, RPC benchmarks, and Wireshark trace documentation to be implemented in Phase 8.

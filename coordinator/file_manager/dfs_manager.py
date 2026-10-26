@@ -38,7 +38,13 @@ class DfsManager:
         sorted_candidates = sorted(candidates, key=lambda n: (counts.get(n, 0), n))
         return sorted_candidates[:count]
 
-    def write_file(self, path, content, online_nodes, user="root", base=None):
+    def write_file(self, path, content, online_nodes=None, user="root", base=None, vector_clock=None):
+        if online_nodes is None:
+            if hasattr(self.coord, "nodes") and self.coord.nodes:
+                from coordinator.node_manager import node_manager
+                online_nodes = node_manager.online(self.coord.nodes)
+            else:
+                online_nodes = ["node-1", "node-2", "node-3"]
         """Splits content into 64KB blocks, coordinates pipeline replication,
         and commits metadata to SQLite catalog.
         """
@@ -129,6 +135,7 @@ class DfsManager:
                 owner=user,
                 perms=0o644,
                 checksum=file_checksum,
+                vector_clock=vector_clock,
             )
 
             all_replicas = sorted(list({n for b in blocks_info for n in b["nodes"]}))
@@ -137,6 +144,7 @@ class DfsManager:
                 "name": os.path.basename(path),
                 "path": path,
                 "version": version,
+                "vector_clock": vector_clock or {},
                 "size": total_size,
                 "blocks": len(blocks_info),
                 "checksum": file_checksum,

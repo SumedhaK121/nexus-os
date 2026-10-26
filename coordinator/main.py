@@ -22,6 +22,7 @@ from coordinator.process_manager.process_manager import ProcessManager
 from coordinator.resource_manager.resource_manager import ResourceManager
 from coordinator.scheduler.node_selector import pick_node
 from coordinator.synchronization.lock_manager import DistributedLockManager
+from coordinator.file_manager.sync_manager import SyncManager
 from distributed_clock.lamport_clock import LamportClock
 from distributed_clock.vector_clock import VectorClock
 
@@ -70,6 +71,7 @@ class Coordinator:
         self.res_mgr = ResourceManager()
         self.dfs = DfsManager(coord=self)
         self.locks = DistributedLockManager(coord=self)
+        self.sync_mgr = SyncManager(coord=self)
 
         # Subscribe to node failure events
         self.node_mgr.subscribe_node_down(self._on_node_down)

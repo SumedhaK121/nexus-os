@@ -321,8 +321,48 @@ Every message transported over TCP or RPC carries logical timestamps:
 - `RaStatus`: `{}` -> `{"type": "OK", "node_id": str, "state": str, "req_ts": [...], "deferred_nodes": [...]}`
 
 ### `SYNC_DEMO`
-- **Payload**: `kind` ("mutex" or omit for producer-consumer).
-- **Reply**: `{"type": "SYNC_RESULT", ...}`
+- **Payload**: `kind` ("mutex", "dropbox"|"engine", or omit for producer-consumer).
+- **Reply**: `{"type": "SYNC_RESULT", ...}` or `{"type": "SYNC_DEMO_RESULT", ...}`
+
+### `SYNC_CHECK_CHUNKS`
+- **Sender**: Worker Node Sync Agent -> Coordinator
+- **Payload**: `path` (str), `chunk_checksums` (list of hex SHA-256 strings).
+- **Reply**: `{"exists": bool, "version": int, "vector_clock": dict, "missing_indices": list[int], "total_chunks": int}`
+
+### `SYNC_PUSH`
+- **Sender**: Worker Node Sync Agent -> Coordinator
+- **Payload**: `path` (str), `content` (str/bytes), `chunks` (list[dict]), `full_size` (int), `file_checksum` (str), `node_id` (str), `new_vc` (dict), `base_vc` (optional dict), `base_version` (optional int).
+- **Reply**: `{"type": "SYNC_OK", "path": str, "version": int, "vector_clock": dict, "bytes_transferred": int, "bytes_saved": int, "savings_pct": float, "full_size": int}` or `{"type": "SYNC_CONFLICT", "conflict": true, "conflict_file": str, ...}`
+
+### `SYNC_PULL`
+- **Sender**: Worker Node Sync Agent -> Coordinator
+- **Payload**: `path` (str).
+- **Reply**: `{"type": "SYNC_PULL_OK", "path": str, "content": str, "version": int, "vector_clock": dict, "size": int, "checksum": str}` or `{"type": "ERROR"}`
+
+### `SYNC_DELETE`
+- **Sender**: Worker Node Sync Agent -> Coordinator
+- **Payload**: `path` (str), `node_id` (str).
+- **Reply**: `{"type": "FILE_OK", ...}` or `{"type": "ERROR"}`
+
+### `SYNC_STATUS`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{}`
+- **Reply**: `{"type": "SYNC_STATUS_RESULT", "policy": str, "total_syncs": int, "bytes_transferred": int, "bytes_saved": int, "savings_pct": float, "conflicts_detected": int, "recent_transfers": list, "node_agents": dict}`
+
+### `SYNC_CONFIG`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `policy` ("SJF"|"FCFS").
+- **Reply**: `{"type": "OK", "policy": str}`
+
+### `SYNC_ENGINE_DEMO`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{}`
+- **Reply**: `{"type": "SYNC_DEMO_RESULT", "trace": list[str], "stats": dict, "success": bool}`
+
+### Node-Level Sync RPCs (`nodes/sync_agent.py`)
+- `SyncStatus`: `{}` -> `{"node_id": str, "running": bool, "policy": str, "queue_depth": int, "active_workers": int, "bytes_saved": int, ...}`
+- `SyncScan`: `{}` -> `{"type": "OK"}`
+- `SyncPull`: `{"path": str}` -> `{"type": "OK", "success": bool}`
 
 ### `RW_DEMO`
 - **Sender**: Dashboard / CLI -> Coordinator
