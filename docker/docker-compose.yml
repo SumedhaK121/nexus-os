@@ -1,0 +1,18 @@
+# Run from project root:  docker compose -f docker/docker-compose.yml up --build   -> http://localhost:8080
+x-node: &node
+  build: {context: .., dockerfile: docker/Dockerfile}
+  environment: {NEXUS_HOST: coordinator}
+  depends_on: [coordinator]
+services:
+  coordinator:
+    build: {context: .., dockerfile: docker/Dockerfile}
+    command: python coordinator/main.py
+    environment: {NEXUS_BIND: 0.0.0.0}
+    ports: ["9000:9000"]
+  node1: {<<: *node, command: python nodes/node1/node.py}
+  node2: {<<: *node, command: python nodes/node2/node.py}
+  node3: {<<: *node, command: python nodes/node3/node.py}
+  dashboard:
+    <<: *node
+    command: python dashboard/app.py
+    ports: ["8080:8080"]

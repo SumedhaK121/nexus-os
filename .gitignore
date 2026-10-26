@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.idea/
+.vscode/
+storage/replicas/*
+!storage/replicas/.gitkeep
+storage/documents/*
+!storage/documents/.gitkeep
+database/*.db
+logs/*.csv
+logs/*.jsonl
+*.log
+.env
+.DS_Store

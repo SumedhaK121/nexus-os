@@ -1,0 +1,37 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NEXUS-OS Control Center</title><link rel="stylesheet" href="/static/style.css"></head><body>
+<aside><div class="logo"><i>N</i><div><b>NEXUS<span>-OS</span></b><small>DISTRIBUTED ENVIRONMENT</small></div></div>
+<nav><a data-v="overview" class="on">◈ System Overview</a><a data-v="nodes">▦ Node Monitor</a><a data-v="proc">⌘ Process Manager</a><a data-v="res">◉ Resource Manager</a><a data-v="files">▤ Distributed Files</a><a data-v="dead">⚠ Deadlock Detection</a><a data-v="cache">◧ Cache &amp; Paging</a><a data-v="sync">⇄ Synchronization</a><a data-v="netp">⌁ Network / IPC</a><a data-v="dock">❖ Docker</a><a data-v="ev">≋ Lamport &amp; Events</a></nav>
+<div class="coord"><span id="dot"></span><div><b>Coordinator</b><small id="cstat">connecting…</small></div></div></aside>
+<main><header><div><small>DISTRIBUTED SYSTEMS / CONTROL CENTER</small><h1 id="title">System Overview</h1></div><div><span class="chip" id="clk">Lamport T=0</span> <span class="chip live">● LIVE</span></div></header>
+
+<section id="overview" class="view on"><div class="grid4" id="stats"></div>
+<div class="grid2"><div class="card"><h3>Running processes (live)</h3><svg id="spark" viewBox="0 0 400 60" preserveAspectRatio="none"></svg></div><div class="card"><h3>Latest events</h3><div class="log" id="evMini"></div></div></div>
+<h3 class="sec">Worker nodes</h3><div class="grid3" id="nodeMini"></div></section>
+
+<section id="nodes" class="view"><div class="grid3" id="nodeGrid"></div></section>
+
+<section id="proc" class="view"><div class="card"><h3>Submit processes to the cluster</h3><table id="pt"></table>
+<div class="row"><button class="ghost" onclick="addRow()">+ Process</button><select id="algo"><option value="fcfs">FCFS</option><option value="sjf">SJF</option><option value="priority">Priority</option><option value="rr">Round Robin</option></select><input id="q" type="number" value="2" min="1" title="RR quantum"><button onclick="submit()">▶ Submit</button><button class="ghost" onclick="compare()">⚖ Compare all</button></div><div id="out"></div></div>
+<div class="card"><h3>Tasks</h3><table><thead><tr><th>PID</th><th>Node</th><th>Burst</th><th>State</th></tr></thead><tbody id="tasks"></tbody></table></div></section>
+
+<section id="res" class="view"><div class="card"><h3>Banker's Algorithm — deadlock avoidance</h3><div class="row"><button onclick="bInit()">Load textbook example</button><select id="bp"></select><input id="br" value="1,0,2" title="request vector"><button class="ghost" onclick="bReq()">Request resources</button></div><p class="mut">Try P1 → 1,0,2 (safe, granted) then P0 → 0,2,0 (unsafe, denied).</p><div id="bTable"></div></div>
+<div class="card"><h3>Resource utilization</h3><div id="util"></div></div></section>
+
+<section id="files" class="view"><div class="card"><h3>File editor</h3><input id="fn" value="report.txt" placeholder="file name" style="margin-bottom:10px"><textarea id="fc" rows="6" placeholder="content…"></textarea><div class="row"><button onclick="fSave()">💾 Save + replicate</button><button class="ghost" onclick="fRead($('fn').value)">Open</button></div><small id="fsrc" style="margin-top:10px"></small></div>
+<div class="card"><h3>Files &amp; replicas</h3><table><thead><tr><th>Name</th><th>Version</th><th>Size</th><th>Replicas</th><th></th></tr></thead><tbody id="ftab"></tbody></table></div>
+<div class="card"><h3>Replica consistency &amp; conflict detection</h3><p class="mut">Saving from an older version is rejected as a CONFLICT. Corrupt a replica of the open file, verify, then repair.</p><div class="row" style="margin-top:0"><button class="ghost" onclick="ver(0)">Verify</button><button class="ghost" onclick="ver(1)">Corrupt a replica</button><button onclick="ver(2)">Repair</button></div><div id="verOut" style="margin-top:12px"></div></div></section>
+
+<section id="dead" class="view"><div class="card"><h3>Deadlock detection — wait-for graph</h3><div class="row" style="margin-top:0"><select id="dsc"><option value="circular">Circular wait (deadlock)</option><option value="chain">No cycle (safe)</option></select><button onclick="dl()">▶ Detect</button></div><p class="mut">Arrow P1 → P2 means P1 waits for a resource held by P2. Avoidance with Banker's Algorithm is under Resource Manager.</p><div id="dlOut"></div></div></section>
+
+<section id="cache" class="view"><div class="card"><h3>File cache</h3><div class="row" style="margin:0 0 12px"><select id="cp"><option>LRU</option><option>FIFO</option></select><input id="cc" type="number" min="1" value="3"><button class="ghost" onclick="cfg()">Apply &amp; reset</button></div><div id="cstats"></div></div>
+<div class="card"><h3>Page replacement simulator</h3><div class="row" style="margin-top:0"><input id="rs" value="7,0,1,2,0,3,0,4,2,3,0,3,2" style="min-width:260px"><input id="rf" type="number" value="3" min="1"><button onclick="sim()">▶ FIFO · LRU · Optimal</button></div><div id="simOut" style="margin-top:12px"></div></div></section>
+
+<section id="sync" class="view"><div class="card"><h3>Ricart-Agrawala mutual exclusion</h3><p class="mut">Nodes that request the critical section at the same time:</p><div class="row" style="margin-top:0"><label><input type="checkbox" class="ra" value="node-1" checked> node-1</label><label><input type="checkbox" class="ra" value="node-2" checked> node-2</label><label><input type="checkbox" class="ra" value="node-3" checked> node-3</label><button onclick="ra()">▶ Simulate</button></div><div id="raOut" style="margin-top:12px"></div></div>
+<div class="card"><h3>Semaphores &amp; mutex</h3><div class="row" style="margin-top:0"><button onclick="pc()">▶ Producer–consumer</button><button class="ghost" onclick="mx()">▶ Mutex race demo</button></div><div class="log" id="pcOut" style="margin-top:12px"></div></div></section>
+
+<section id="netp" class="view"><div class="card"><h3>Network / IPC traffic — TCP sockets</h3><p class="mut">Messages handled by the coordinator, by type.</p><div id="net"></div></div></section>
+
+<section id="dock" class="view"><div class="card"><h3>Docker deployment</h3><p class="mut">Defined in <code>docker/docker-compose.yml</code>. Start with <code>docker compose -f docker/docker-compose.yml up --build</code></p>
+<table><tr><th>Service</th><th>Command</th><th>Port</th></tr><tr><td>coordinator</td><td>python coordinator/main.py</td><td>9000</td></tr><tr><td>node1</td><td>python nodes/node1/node.py</td><td>—</td></tr><tr><td>node2</td><td>python nodes/node2/node.py</td><td>—</td></tr><tr><td>node3</td><td>python nodes/node3/node.py</td><td>—</td></tr><tr><td>dashboard</td><td>python dashboard/app.py</td><td>8080</td></tr></table></div></section>
+
+<section id="ev" class="view"><div class="card"><h3>Event log — Lamport order (current T = <span id="lt">0</span>)</h3><div class="log tall" id="evAll"></div></div></section></main><div id="modal" class="modal" onclick="if(event.target==this)closeM()"><div class="card"><h3 id="mt"></h3><pre id="mb"></pre><p id="mm" class="mut"></p><div class="row"><button onclick="editFile()">✎ Edit in editor</button><button class="ghost" onclick="closeM()">Close</button></div></div></div><div id="toasts"></div><script src="/static/script.js"></script></body></html>
