@@ -389,6 +389,7 @@ def register(coord):
                 "dfs_files": dfs_files,
                 "dfs_node_counts": dfs_node_counts,
                 "dfs_under_replicated": dfs_under_rep,
+                "locks": c.locks.get_status() if hasattr(c, "locks") else {},
                 "util": util_data,
                 "procs": procs_data,
                 "safe": safe_flag,

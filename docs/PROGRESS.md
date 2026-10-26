@@ -288,3 +288,51 @@
   # In web dashboard, navigate to Event Log tab to view vector clocks and click "▶ Demonstrate Concurrent Edits"
   ```
 - **Known Gaps**: Real node-to-node Ricart-Agrawala mutual exclusion and lease-based distributed lock manager to be implemented in Phase 6.
+
+
+---
+
+## Phase 6: Distributed Locks (Ricart-Agrawala)
+- **Branch**: `phase-6-locks` (merged into `main`)
+- **Tag**: `phase-6-complete`
+- **Completed**: Yes
+- **What Was Done**:
+  1. Implemented real node-to-node Ricart-Agrawala distributed mutual exclusion in `nodes/ra_participant.py`:
+     - Protocol states: `RELEASED`, `WANTED`, `HELD`.
+     - Entering CS: increments local Lamport clock, marks state `WANTED`, broadcasts `RaRequest(req_node, ts)` to all $N-1$ peers, and waits for $N-1$ incoming `RaReply` messages.
+     - Handling requests: if state is `HELD` or (`WANTED` and own request has lower/equal priority `(ts, node_id)`), request is deferred in `deferred_nodes` queue; otherwise sends immediate `RaReply`.
+     - Exiting CS: marks state `RELEASED`, drains and flushes deferred queue by sending `RaReply` to each waiting peer, achieving exactly $2(N-1)$ message complexity.
+     - Integrated into worker node (`nodes/node.py`) with RPC endpoints: `RaRequest`, `RaReply`, `RaEnter`, `RaExit`, and `RaStatus`.
+  2. Implemented Coordinator-side Distributed Lock Manager in `coordinator/synchronization/lock_manager.py`:
+     - Named resource locks (e.g. `file:/path`, `table:records`).
+     - Time-bounded leases (`lease_sec`, default 15.0 s) with automatic expiration to prevent deadlocks from orphaned leases.
+     - FIFO waiter queue: releasing a lock automatically promotes and grants the lock to the next waiting client.
+     - Wait-For Graph integration: waiting clients dynamically register dependency edges in `res_mgr.wait_for_graph` for cycle detection.
+     - Node failure auto-release: `on_node_down(node_id)` cleans up and frees all leases held by a disconnected node.
+  3. Added Coordinator API Handlers in `coordinator/api/sync_handlers.py`:
+     - `LOCK_ACQUIRE`, `LOCK_RELEASE`, `LOCK_RENEW`, `LOCK_STATUS`.
+     - `RA_CLUSTER_DEMO`: End-to-end multi-node Ricart-Agrawala demonstration showing node-1 entering CS, node-2 being deferred, node-1 exiting CS, and node-2 being unblocked.
+     - `RA_COMPLEXITY`: Message complexity table comparing Ricart-Agrawala $2(N-1)$ with Lamport's $3(N-1)$.
+  4. Upgraded Dashboard UI in `dashboard/static/index.html` and `dashboard/static/script.js`:
+     - Distributed Lock Manager control panel: interactive lock acquire, renew, release, and live table of active leases and wait queues.
+     - Real Ricart-Agrawala Cluster Mutual Exclusion visualizer: cluster demo runner, step-by-step execution trace log, and theoretical complexity table.
+  5. Comprehensive test suite in `tests/test_phase6_locks.py` (5 unit tests covering local RA participant logic, multi-node RPC mutual exclusion and deferral, lease expiration, lock queue grant, and auto-release on node failure).
+- **Files Changed/Created**:
+  - `nodes/ra_participant.py`
+  - `nodes/node.py`
+  - `coordinator/synchronization/lock_manager.py`
+  - `coordinator/main.py`
+  - `coordinator/api/sync_handlers.py`
+  - `coordinator/api/core_handlers.py`
+  - `dashboard/static/index.html`
+  - `dashboard/static/script.js`
+  - `tests/test_phase6_locks.py`
+  - `docs/CONTRACT.md`
+  - `docs/PROGRESS.md`
+- **How to Try It**:
+  ```bash
+  python -m unittest discover -s tests
+  python app.py
+  # In web dashboard, navigate to Sync tab to test Distributed Locks and run "▶ Run Real Ricart-Agrawala Cluster Demo"
+  ```
+- **Known Gaps**: Sync engine (Dropbox-Lite) with folder watcher, chunk-level delta synchronization, and vector clock conflict copies to be implemented in Phase 7.

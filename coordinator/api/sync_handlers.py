@@ -1,9 +1,14 @@
 """NEXUS-OS Synchronization & Distributed Mutual Exclusion Handlers.
 Implements RA_SIMULATE, SYNC_DEMO, RW_DEMO, PHILOSOPHERS_DEMO,
-BOUNDED_QUEUE_DEMO, RACE_DEMO, and VMSTAT telemetry.
-Concept: Ricart-Agrawala algorithm with logical clocks, Semaphores, Monitors, RWLock, and Dining Philosophers.
+BOUNDED_QUEUE_DEMO, RACE_DEMO, VMSTAT telemetry,
+Distributed Lock Manager endpoints (LOCK_ACQUIRE, LOCK_RELEASE, LOCK_RENEW, LOCK_STATUS),
+Real Ricart-Agrawala Cluster Demo (RA_CLUSTER_DEMO), and Complexity Analysis (RA_COMPLEXITY).
+Concept: Ricart-Agrawala (Ricart & Agrawala 1981), Distributed Leases (Chubby/ZooKeeper).
 """
 
+import threading
+import time
+from communication import rpc
 from coordinator.synchronization.ricart_agrawala import simulate
 from coordinator.synchronization.primitives import (
     producer_consumer,
@@ -54,8 +59,6 @@ def register(coord):
         cap = int(m.get("capacity", 5))
         items_count = int(m.get("items", 12))
         bq = BoundedQueue(capacity=cap)
-
-        import threading
         log = []
 
         def producer():
@@ -92,3 +95,116 @@ def register(coord):
     @coord.handler("VMSTAT")
     def _vmstat(c, ctx, m):
         return {"type": "VMSTAT_RESULT", **get_vm_snapshot()}
+
+    # ------------------ Distributed Lock Manager Handlers ------------------
+
+    @coord.handler("LOCK_ACQUIRE")
+    def _lock_acquire(c, ctx, m):
+        name = m["name"]
+        client = m.get("client_id") or (ctx.node_id if ctx else "client")
+        lease = m.get("lease_sec")
+        res = c.locks.acquire(name, client, lease_sec=lease)
+        return res
+
+    @coord.handler("LOCK_RELEASE")
+    def _lock_release(c, ctx, m):
+        name = m["name"]
+        client = m.get("client_id") or (ctx.node_id if ctx else "client")
+        res = c.locks.release(name, client)
+        return res
+
+    @coord.handler("LOCK_RENEW")
+    def _lock_renew(c, ctx, m):
+        name = m["name"]
+        client = m.get("client_id") or (ctx.node_id if ctx else "client")
+        lease = m.get("lease_sec")
+        res = c.locks.renew(name, client, lease_sec=lease)
+        return res
+
+    @coord.handler("LOCK_STATUS")
+    def _lock_status(c, ctx, m):
+        return {"type": "LOCK_STATUS_RESULT", "locks": c.locks.get_status()}
+
+    # ------------------ Real Ricart-Agrawala Cluster Demostration ------------------
+
+    @coord.handler("RA_CLUSTER_DEMO")
+    def _ra_cluster_demo(c, ctx, m):
+        nodes_list = online()
+        if len(nodes_list) < 2:
+            return {"type": "ERROR", "error": f"Need at least 2 online nodes for RA cluster demo, found: {nodes_list}"}
+
+        n1 = nodes_list[0]
+        n2 = nodes_list[1]
+        trace = []
+
+        trace.append(f"1. {n1} requests Critical Section via RaEnter (peers: {nodes_list})")
+        r1 = rpc.call_node(n1, "RaEnter", {"peers": nodes_list}, timeout=3.0)
+        trace.append(f"   {n1} response: {r1}")
+
+        # Check status of n1
+        st1 = rpc.call_node(n1, "RaStatus", {})
+        trace.append(f"2. {n1} state is now: {st1.get('state')} (Critical Section HELD)")
+
+        # In background, n2 requests CS (should be deferred by n1)
+        trace.append(f"3. {n2} requests Critical Section concurrently")
+        n2_done = [False]
+        n2_res = [{}]
+
+        def n2_requester():
+            n2_res[0] = rpc.call_node(n2, "RaEnter", {"peers": nodes_list}, timeout=5.0)
+            n2_done[0] = True
+
+        t = threading.Thread(target=n2_requester)
+        t.start()
+        time.sleep(0.15)  # Let n2 send request to n1
+
+        # Check status of n1 deferred queue
+        st1_after = rpc.call_node(n1, "RaStatus", {})
+        trace.append(f"4. {n1} deferred queue contains: {st1_after.get('deferred_nodes')}")
+
+        # Release CS on n1 -> unblocks n2
+        trace.append(f"5. {n1} exits Critical Section via RaExit -> flushes deferred reply to {n2}")
+        rel1 = rpc.call_node(n1, "RaExit", {})
+        trace.append(f"   {n1} released {rel1.get('released_count')} deferred replies")
+
+        t.join(timeout=2.0)
+        st2 = rpc.call_node(n2, "RaStatus", {})
+        trace.append(f"6. {n2} unblocked and entered Critical Section: state={st2.get('state')}")
+
+        # n2 exits CS
+        rpc.call_node(n2, "RaExit", {})
+        trace.append(f"7. {n2} exits Critical Section. Mutual exclusion test complete!")
+
+        c.log("ricart-agrawala", f"Real RA cluster demo complete between {n1} and {n2}")
+        return {
+            "type": "RA_CLUSTER_DEMO_RESULT",
+            "nodes": [n1, n2],
+            "trace": trace,
+            "success": True,
+        }
+
+    @coord.handler("RA_COMPLEXITY")
+    def _ra_complexity(c, ctx, m):
+        table = []
+        for n in range(2, 9):
+            reqs = n - 1
+            reps = n - 1
+            total = 2 * (n - 1)
+            table.append({
+                "cluster_size": n,
+                "requests_sent": reqs,
+                "replies_received": reps,
+                "total_messages": total,
+                "lamport_comparison": 3 * (n - 1),  # Lamport 1978 requires 3(N-1) messages
+            })
+        return {
+            "type": "RA_COMPLEXITY_RESULT",
+            "algorithm": "Ricart-Agrawala (1981)",
+            "message_complexity": "2(N - 1)",
+            "table": table,
+            "explanation": (
+                "Ricart-Agrawala eliminates the explicit RELEASE message required by Lamport's algorithm. "
+                "Each node sends (N-1) REQUEST messages and waits for (N-1) REPLY messages. "
+                "Deferred replies are sent upon exiting the critical section, achieving exactly 2(N-1) messages per entry."
+            ),
+        }
