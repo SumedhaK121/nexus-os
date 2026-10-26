@@ -1,7 +1,8 @@
 """NEXUS-OS Block Store (DataNode Storage Engine).
 Manages block storage under NEXUS_DATA_DIR/blocks/.
 Serves PutBlock, GetBlock, DeleteBlock, and ListBlocks over RPC.
-Concept: Distributed block storage layer (similar to HDFS DataNode / Ceph OSD).
+Integrates per-node in-memory page cache (LRU/FIFO/Optimal) with access tracing.
+Concept: Distributed block storage layer (HDFS DataNode / Ceph OSD) + Page Cache (Linux buffer cache).
 """
 
 import base64
@@ -9,22 +10,27 @@ import hashlib
 import os
 import threading
 from communication import rpc
+from nodes.node_cache import NodeBlockCache
 
 
 class BlockStore:
-    """Node-side block storage engine with SHA-256 integrity verification."""
-    def __init__(self, data_dir, node_id):
+    """Node-side block storage engine with SHA-256 integrity verification and in-memory cache."""
+    def __init__(self, data_dir, node_id, cache_capacity=None, cache_policy=None):
         self.node_id = node_id
         self.blocks_dir = os.path.join(data_dir, "blocks")
         os.makedirs(self.blocks_dir, exist_ok=True)
         self.lock = threading.Lock()
+
+        cap = cache_capacity if cache_capacity is not None else int(os.environ.get("NEXUS_CACHE_CAP", 4))
+        pol = cache_policy or os.environ.get("NEXUS_CACHE_POLICY", "LRU")
+        self.cache = NodeBlockCache(node_id=node_id, capacity=cap, policy=pol)
 
     def _block_path(self, block_id):
         safe_id = "".join(c for c in block_id if c.isalnum() or c in ("-", "_", "."))
         return os.path.join(self.blocks_dir, safe_id)
 
     def put_block(self, payload):
-        """Stores a block and forwards to next replica in the pipeline if forward_to is specified."""
+        """Stores a block, caches it, and forwards to next replica in the pipeline if forward_to is specified."""
         block_id = payload["block_id"]
         raw_data = payload.get("data")
         is_b64 = payload.get("base64", False)
@@ -47,6 +53,9 @@ class BlockStore:
         with self.lock:
             with open(path, "wb") as f:
                 f.write(data_bytes)
+
+        # Update in-memory page cache
+        self.cache.put(block_id, data_bytes)
 
         # Pipeline forwarding to next replica (HDFS-style)
         forwarded = []
@@ -78,8 +87,27 @@ class BlockStore:
         }
 
     def get_block(self, payload):
-        """Retrieves block data and verifies SHA-256 checksum."""
+        """Retrieves block data (checking cache first) and verifies SHA-256 checksum."""
         block_id = payload["block_id"]
+
+        # Check in-memory cache
+        cached_bytes = self.cache.get(block_id)
+        if cached_bytes is not None:
+            checksum = hashlib.sha256(cached_bytes).hexdigest()
+            try:
+                text = cached_bytes.decode("utf-8")
+                return {"type": "OK", "block_id": block_id, "data": text, "checksum": checksum, "base64": False, "source": "cache"}
+            except UnicodeDecodeError:
+                return {
+                    "type": "OK",
+                    "block_id": block_id,
+                    "data": base64.b64encode(cached_bytes).decode("ascii"),
+                    "checksum": checksum,
+                    "base64": True,
+                    "source": "cache",
+                }
+
+        # Cache miss: read from disk
         path = self._block_path(block_id)
         with self.lock:
             if not os.path.exists(path):
@@ -88,10 +116,13 @@ class BlockStore:
                 data_bytes = f.read()
 
         checksum = hashlib.sha256(data_bytes).hexdigest()
+        # Populate cache
+        self.cache.put(block_id, data_bytes)
+
         # Return as utf-8 if valid text, else base64
         try:
             text = data_bytes.decode("utf-8")
-            return {"type": "OK", "block_id": block_id, "data": text, "checksum": checksum, "base64": False}
+            return {"type": "OK", "block_id": block_id, "data": text, "checksum": checksum, "base64": False, "source": "disk"}
         except UnicodeDecodeError:
             return {
                 "type": "OK",
@@ -99,11 +130,13 @@ class BlockStore:
                 "data": base64.b64encode(data_bytes).decode("ascii"),
                 "checksum": checksum,
                 "base64": True,
+                "source": "disk",
             }
 
     def delete_block(self, payload):
-        """Removes a block file from local disk."""
+        """Removes a block file from local disk and invalidates cache."""
         block_id = payload["block_id"]
+        self.cache.invalidate(block_id)
         path = self._block_path(block_id)
         with self.lock:
             if os.path.exists(path):
@@ -128,6 +161,7 @@ class BlockStore:
     def corrupt_block(self, payload):
         """Test helper: deliberately corrupts a local block for verify/scrub demonstrations."""
         block_id = payload["block_id"]
+        self.cache.invalidate(block_id)
         path = self._block_path(block_id)
         with self.lock:
             if os.path.exists(path):
@@ -135,3 +169,14 @@ class BlockStore:
                     f.write(b"CORRUPTED_BLOCK_DATA")
                 return {"type": "OK", "corrupted": block_id}
         return {"type": "ERROR", "error": f"Block {block_id} not found"}
+
+    def cache_stats(self, payload=None):
+        """Returns node block cache hit/miss statistics."""
+        return {"type": "OK", **self.cache.stats()}
+
+    def cache_config(self, payload):
+        """Updates node cache capacity and/or policy."""
+        cap = payload.get("capacity")
+        pol = payload.get("policy")
+        self.cache.set_config(capacity=cap, policy=pol)
+        return {"type": "OK", **self.cache.stats()}

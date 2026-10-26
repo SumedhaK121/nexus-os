@@ -81,6 +81,8 @@ class Node:
         self.server.register_method("DeleteBlock", self.block_store.delete_block)
         self.server.register_method("ListBlocks", self.block_store.list_blocks)
         self.server.register_method("CorruptBlock", self.block_store.corrupt_block)
+        self.server.register_method("CacheStats", self.block_store.cache_stats)
+        self.server.register_method("CacheConfig", self.block_store.cache_config)
 
     def _rpc_kill(self, payload):
         pid = payload.get("pid")

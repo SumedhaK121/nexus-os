@@ -123,3 +123,54 @@ async function dfsScrub(repair){
   toast(`DFS Scrub: ${r.corrupted_detected} corrupted, ${r.repaired} repaired`);
   refresh();
 }
+
+async function beladyDemo(){
+  const r=await api({type:"BELADY_DEMO"});
+  const c=r.comparison;
+  let rows="";
+  for(const algo of ["FIFO","LRU","Optimal"]){
+    const d3=c[algo][3], d4=c[algo][4];
+    const anom=(algo=="FIFO"&&d4.faults>d3.faults);
+    rows+=`<tr><td><b>${algo}</b></td><td>${d3.faults} faults (${d3.hits} hits)</td><td class="${anom?'bad':'good'}"><b>${d4.faults} faults</b> (${d4.hits} hits) ${anom?'⚠ ANOMALY':''}</td><td>${anom?'Faults INCREASE with +1 frame':d4.faults<d3.faults?'Faults DECREASE (monotonic)':'-'}</td></tr>`;
+  }
+  $("beladyOut").innerHTML=`<table><tr><th>Algorithm</th><th>3 Frames</th><th>4 Frames</th><th>Property</th></tr>${rows}</table><p class="mut" style="margin-top:6px">${r.explanation}</p>`;
+}
+
+async function cacheReplay(){
+  const r=await api({type:"CACHE_REPLAY"});
+  let t="";
+  for(const [f,list] of Object.entries(r.by_frame)){
+    t+=`<tr><td><b>${f} Frames</b></td>`+list.map(x=>`<td>${x.faults} faults (${x.ratio}%)</td>`).join("")+`</tr>`;
+  }
+  $("beladyOut").innerHTML=`<p>Replayed <b>${r.reference_count}</b> block accesses (${r.unique_references} unique blocks)</p><table><tr><th>Frames</th><th>FIFO</th><th>LRU</th><th>Optimal</th></tr>${t}</table>`;
+}
+
+async function rwDemo(){
+  const pref=$("rwPref").value;
+  const r=await api({type:"RW_DEMO",preference:pref,duration:0.35});
+  $("rwOut").innerHTML=`<div class="row">Preference: <b>${r.preference}</b> <span class="tag ${r.starved?'r':'g'}">${r.starved?'WRITER STARVED':'WRITER SERVED'}</span> <span class="mut">Wait: ${r.writer_wait_seconds}s · Reads during wait: ${r.total_reads_during_wait}</span></div>`;
+  toast(`RWLock test (${pref}): ${r.starved?'Writer Starved':'Writer Served'}`);
+  refresh();
+}
+
+async function philDemo(){
+  const mode=$("philMode").value;
+  const r=await api({type:"PHILOSOPHERS_DEMO",mode:mode,rounds:2});
+  $("philOut").innerHTML=`<div class="row">Mode: <b>${r.mode}</b> <span class="tag ${r.deadlocked?'r':'g'}">${r.deadlocked?'DEADLOCK DETECTED':'NO DEADLOCK'}</span> <span class="mut">Meals: ${r.total_meals}/${r.expected_meals} (${r.elapsed_seconds}s)</span></div><div class="log" style="margin-top:8px">`+r.log.map(l=>`<div>${l}</div>`).join("")+`</div><p class="mut" style="margin-top:6px">${r.explanation}</p>`;
+  toast(`Philosophers (${mode}): ${r.deadlocked?'Deadlocked':'Success'}`);
+  refresh();
+}
+
+async function raceDemo(){
+  const r=await api({type:"RACE_DEMO",threads:4,iterations:200});
+  $("pcOut").innerHTML=`<div><b>Storage Race Condition Demo:</b></div><div>Expected Count: <b>${r.expected}</b></div><div>With Mutex: <b class="good">${r.with_lock}</b> (0 lost updates)</div><div>Without Mutex: <b class="bad">${r.without_lock}</b> (Lost updates: <b>${r.lost_updates}</b>)</div><p class="mut">Race condition confirmed: unsynchronized read-modify-write lost ${r.lost_updates} writes.</p>`;
+  toast(`Storage Race: ${r.lost_updates} lost updates without lock`);
+  refresh();
+}
+
+async function vmstatDemo(){
+  const r=await api({type:"VMSTAT"});
+  const vm=r.virtual_memory||{}, sw=r.swap_memory||{};
+  $("pcOut").innerHTML=`<div><b>Virtual Memory &amp; Swap Telemetry (${r.os}):</b></div><div>RAM: ${vm.used_mb} MB used / ${vm.total_mb} MB total (<b>${vm.percent}%</b>) · Available: ${vm.available_mb} MB</div><div>Swap: ${sw.used_mb} MB used / ${sw.total_mb} MB total (<b>${sw.percent}%</b>) · Free: ${sw.free_mb} MB</div>`;
+  toast("Loaded VM telemetry snapshot");
+}

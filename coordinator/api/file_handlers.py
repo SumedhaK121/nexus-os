@@ -1,11 +1,17 @@
 """NEXUS-OS Distributed File & Namespace API Handlers.
 Implements FS_MKDIR, FS_LS, FS_RMDIR, FS_RENAME, FS_MOVE, FS_STAT, FS_CHMOD,
-FS_WRITE, FS_READ, FS_DELETE, FS_SCRUB, alongside backward-compatible FILE_* handlers.
-Concept: Distributed NameNode filesystem operations and block placement (HDFS/GFS).
+FS_WRITE, FS_READ, FS_DELETE, FS_SCRUB, CACHE_REPLAY, BELADY_DEMO,
+alongside backward-compatible FILE_* handlers.
+Concept: Distributed NameNode filesystem operations and block placement (HDFS/GFS) + Virtual Memory Page Replacement.
 """
 
+import os
 from coordinator.file_manager.cache import Cache
-from coordinator.file_manager.page_replacement import simulate as page_sim
+from coordinator.file_manager.page_replacement import (
+    simulate as page_sim,
+    beladys_anomaly_demo,
+    replay_trace,
+)
 from coordinator.node_manager import node_manager
 
 
@@ -118,6 +124,26 @@ def register(coord):
         repair = m.get("repair", True)
         res = c.dfs.scrub(repair=repair)
         c.log("dfs", f"FS_SCRUB completed: {res['corrupted_detected']} corruptions, {res['repaired']} repaired")
+        return res
+
+    # ------------------ Cache & Trace Replay Operations ------------------
+
+    @coord.handler("CACHE_REPLAY")
+    def _cr(c, ctx, m):
+        trace_path = m.get("trace_path")
+        if not trace_path:
+            root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            trace_path = os.path.join(root, "logs", "access_trace.jsonl")
+        refs = m.get("refs") or trace_path
+        frame_sizes = m.get("frame_sizes", [2, 3, 4])
+        res = replay_trace(refs, frame_sizes=frame_sizes)
+        c.log("cache", f"CACHE_REPLAY evaluated on {res['reference_count']} references")
+        return res
+
+    @coord.handler("BELADY_DEMO")
+    def _bd(c, ctx, m):
+        res = beladys_anomaly_demo()
+        c.log("cache", "Belady's anomaly evaluated: FIFO 3 frames vs 4 frames")
         return res
 
     # ------------------ Backward Compatible FILE_* Operations ------------------
