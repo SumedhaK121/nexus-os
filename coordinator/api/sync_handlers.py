@@ -208,3 +208,69 @@ def register(coord):
                 "Deferred replies are sent upon exiting the critical section, achieving exactly 2(N-1) messages per entry."
             ),
         }
+
+    # ------------------ Dropbox-Lite Distributed Sync Handlers ------------------
+
+    @coord.handler("SYNC_CHECK_CHUNKS")
+    def _sync_check_chunks(c, ctx, m):
+        path = m["path"]
+        chunks = m.get("chunk_checksums", [])
+        return c.sync_mgr.check_chunks(path, chunks)
+
+    @coord.handler("SYNC_PUSH")
+    def _sync_push(c, ctx, m):
+        path = m["path"]
+        content = m.get("content", "")
+        chunks = m.get("chunks", [])
+        full_size = m.get("full_size", len(content))
+        file_checksum = m.get("file_checksum", "")
+        node_id = m.get("node_id") or (ctx.node_id if ctx else "client")
+        new_vc = m.get("new_vc", {})
+        base_vc = m.get("base_vc")
+        base_ver = m.get("base_version")
+        return c.sync_mgr.sync_push(
+            path=path,
+            content=content,
+            chunks_data=chunks,
+            full_size=full_size,
+            file_checksum=file_checksum,
+            node_id=node_id,
+            new_vc=new_vc,
+            base_vc=base_vc,
+            base_version=base_ver,
+        )
+
+    @coord.handler("SYNC_PULL")
+    def _sync_pull(c, ctx, m):
+        path = m["path"]
+        return c.sync_mgr.sync_pull(path)
+
+    @coord.handler("SYNC_DELETE")
+    def _sync_delete(c, ctx, m):
+        path = m["path"]
+        node_id = m.get("node_id") or (ctx.node_id if ctx else "client")
+        return c.sync_mgr.sync_delete(path, node_id=node_id)
+
+    @coord.handler("SYNC_STATUS")
+    def _sync_status(c, ctx, m):
+        stats = c.sync_mgr.get_stats()
+        node_agents = {}
+        for nid in node_manager.online(c.nodes):
+            res = rpc.call_node(nid, "SyncStatus", {})
+            if res.get("node_id"):
+                node_agents[nid] = res
+        return {
+            "type": "SYNC_STATUS_RESULT",
+            **stats,
+            "node_agents": node_agents,
+        }
+
+    @coord.handler("SYNC_CONFIG")
+    def _sync_config(c, ctx, m):
+        if "policy" in m:
+            c.sync_mgr.policy = str(m["policy"]).upper()
+        return {"type": "OK", "policy": c.sync_mgr.policy}
+
+    @coord.handler("SYNC_ENGINE_DEMO")
+    def _sync_engine_demo(c, ctx, m):
+        return c.sync_mgr.run_sync_demo()
