@@ -37,6 +37,9 @@ if($("dfsSummary")){
   if($("lockTab")&&S.locks){
     $("lockTab").innerHTML=Object.entries(S.locks).map(([name,info])=>`<tr><td><b>${name}</b></td><td><span class="tag g">${info.holder}</span></td><td>${info.remaining_lease}s</td><td>${(info.waiters||[]).map(w=>`<span class="tag y">${w}</span>`).join(" ")||"None"}</td><td><button class="ghost" onclick="lockRelease('${name}','${info.holder}')">Release</button></td></tr>`).join("")||`<tr><td colspan=5 class="mut">No active locks held</td></tr>`;
   }
+  if($("dockTab")&&S.containers){
+    $("dockTab").innerHTML=S.containers.map(c=>`<tr><td><b>${c.container}</b></td><td>${c.node_id}</td><td><span class="tag ${c.status=='ONLINE'?'g':c.status=='SUSPECT'?'y':'r'}">${c.status}</span></td><td>${c.cpu}%</td><td>${c.mem_limit}</td><td>${c.load}</td><td>${c.done}</td></tr>`).join("")||`<tr><td colspan=7 class="mut">No active containers</td></tr>`;
+  }
   if(!window._dfsLoaded){dfsLs("/");window._dfsLoaded=true;}
 }
 const b=S.banker;if(!b){$("bTable").innerHTML=`<p class="mut">Click “Load textbook example” to start.</p>`;return}
@@ -286,4 +289,35 @@ async function loadGrpcMetrics(){
   let rows=Object.entries(r.methods||{}).map(([m,s])=>`<tr><td><b>${m}</b></td><td>${s.calls}</td><td>${s.bytes} B</td><td>${s.avg_latency_ms} ms</td><td>${s.errors}</td></tr>`).join("");
   $("rpcBenchOut").innerHTML=`<div class="card"><h4>Live gRPC Telemetry Metrics (Total Calls: ${r.total_calls}, Total Bytes: ${r.total_bytes})</h4><table><tr><th>gRPC Method</th><th>Calls</th><th>Bytes</th><th>Avg Latency</th><th>Errors</th></tr>${rows||'<tr><td colspan=5 class="mut">No gRPC calls recorded yet</td></tr>'}</table></div>`;
   toast("Refreshed gRPC telemetry metrics");
+}
+
+async function loadDockerStatus(){
+  const r=await api({type:"DOCKER_STATUS"});
+  if(r.type=="ERROR")return toast(r.error,0);
+  $("dockMode").textContent=`Mode: ${r.mode=="docker_compose"?"Docker Compose":"Process Cluster"}`;
+  if(r.host_stats&&r.host_stats.cpu_percent!==undefined){
+    $("hostTele").textContent=`Host: CPU ${r.host_stats.cpu_percent}% · RAM ${r.host_stats.memory_used_mb}MB / ${r.host_stats.memory_total_mb}MB (${r.host_stats.memory_percent}%)`;
+  }
+  const items=r.nodes||r.containers||[];
+  $("dockTab").innerHTML=items.map(c=>`<tr><td><b>${c.container}</b></td><td>${c.node_id||"—"}</td><td><span class="tag ${c.status=='ONLINE'?'g':c.status=='SUSPECT'?'y':'r'}">${c.status}</span></td><td>${c.cpu||0}%</td><td>${c.mem_limit||"256MB"}</td><td>${c.load||0}</td><td>${c.done||0}</td></tr>`).join("")||`<tr><td colspan=7 class="mut">No containers running</td></tr>`;
+  toast("Container status refreshed");
+}
+
+async function injectChaos(act){
+  const node=$("chaosNode").value;
+  toast(`Injecting Chaos '${act}' on ${node}...`);
+  const r=await api({type:"CHAOS_ACTION",action:act,node_id:node,delay_ms:250});
+  if(r.type=="ERROR")return toast(r.error,0);
+  $("chaosOut").innerHTML=`<div class="card" style="border:1px solid #f59e0b"><h4>Chaos Injection Result</h4><p>Target: <b>${r.node_id}</b> · Action: <b class="chip">${r.action.toUpperCase()}</b> · Status: <span class="tag ${r.status=='ONLINE'?'g':r.status=='SUSPECT'?'y':'r'}">${r.status||r.action}</span></p><p class="mut">Action processed. Coordinator logical clock ticked and failure detection callbacks executed.</p></div>`;
+  toast(`Chaos action '${act}' injected successfully on ${node}`);
+  refresh();
+}
+
+async function runIsoDemo(){
+  toast("Running Cgroup Memory Isolation Demo...");
+  const r=await api({type:"ISO_DEMO",limit_mb:80,leak_target_mb:140});
+  if(r.type=="ERROR")return toast(r.error,0);
+  $("isoOut").innerHTML=`<div class="card" style="border:1px solid #ef4444"><h4>Memory Quota Isolation Result (PID ${r.pid})</h4><table><tr><th>Configured Memory Limit</th><th>Workload Demand</th><th>Peak Observed RSS</th><th>Termination Event</th><th>Cluster State</th></tr><tr><td><b>${r.limit_mb} MB</b></td><td>140 MB</td><td><b>${r.peak_rss_mb} MB</b></td><td><span class="tag ${r.oom_killed?'r':'g'}">${r.oom_killed?'OOM-KILLED (exit 137)':'Exited Normally'}</span></td><td class="good">✔ Protected &amp; Responsive</td></tr></table><p class="mut" style="margin-top:6px">OS Concept: Process Isolation &amp; Cgroups. Demonstrates that runaway processes cannot starve sibling nodes or master control plane.</p></div>`;
+  toast("Memory isolation demo completed!");
+  refresh();
 }

@@ -137,6 +137,8 @@ class Coordinator:
         if hasattr(self, "dfs"):
             self.dfs.meta.mark_node_online(node_id)
         with self.lock:
+            if node_id in self.nodes:
+                self.nodes[node_id]["status"] = "ONLINE"
             self.res_mgr.update_cluster_capacity(self.nodes)
 
     # ---------- plugin API ----------
@@ -211,15 +213,24 @@ class Coordinator:
             conn.close()
 
     def _monitor(self):
-        """Failure detection and periodic resource / deadlock monitoring."""
+        """Failure detection (3-state: ONLINE -> SUSPECT -> OFFLINE) and periodic monitoring."""
         while True:
             time.sleep(2)
+            now = time.time()
             with self.lock:
                 for nid, n in list(self.nodes.items()):
-                    if time.time() - n["last_seen"] > 6 and n["status"] == "ONLINE":
-                        n["status"] = "OFFLINE"
-                        self.node_mgr.mark_offline(nid)
-                        print(f"!! {nid} marked OFFLINE (heartbeat timeout)", flush=True)
+                    dt = now - n.get("last_seen", now)
+                    curr_st = n.get("status", "ONLINE")
+                    if dt > 6:
+                        if curr_st != "OFFLINE":
+                            n["status"] = "OFFLINE"
+                            self.node_mgr.mark_offline(nid)
+                            print(f"!! {nid} marked OFFLINE (heartbeat timeout: {dt:.1f}s)", flush=True)
+                    elif dt > 4:
+                        if curr_st == "ONLINE":
+                            n["status"] = "SUSPECT"
+                            self.node_mgr.mark_suspect(nid)
+                            print(f"?? {nid} marked SUSPECT (heartbeat delayed: {dt:.1f}s)", flush=True)
 
             if hasattr(self, "res_mgr"):
                 self.res_mgr.record_snapshot()

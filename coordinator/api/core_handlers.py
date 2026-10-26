@@ -377,6 +377,20 @@ def register(coord):
             dfs_node_counts = c.dfs.meta.get_node_block_counts() if hasattr(c, "dfs") else {}
             dfs_under_rep = len(c.dfs.meta.get_under_replicated_blocks(2)) if hasattr(c, "dfs") else 0
 
+            containers_summary = [
+                {
+                    "container": f"nexus-{k}",
+                    "node_id": k,
+                    "status": v.get("status", "OFFLINE"),
+                    "cpu": v.get("cpu", 0),
+                    "load": v.get("load", 0),
+                    "done": v.get("done", 0),
+                    "mem_limit": f"{v.get('mem_mb', 256)}MB",
+                    "cpus": f"{v.get('cpu_slots', 2)}.0",
+                }
+                for k, v in c.nodes.items()
+            ]
+
             return {
                 "type": "STATUS",
                 "clock": c.clock.t,
@@ -391,6 +405,7 @@ def register(coord):
                 "dfs_under_replicated": dfs_under_rep,
                 "locks": c.locks.get_status() if hasattr(c, "locks") else {},
                 "sync": c.sync_mgr.get_stats() if hasattr(c, "sync_mgr") else {},
+                "containers": containers_summary,
                 "util": util_data,
                 "procs": procs_data,
                 "safe": safe_flag,

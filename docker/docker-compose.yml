@@ -1,18 +1,106 @@
-# Run from project root:  docker compose -f docker/docker-compose.yml up --build   -> http://localhost:8080
+# Run from project root:
+# docker compose -f docker/docker-compose.yml up --build -> http://localhost:8080
+
+version: "3.8"
+
 x-node: &node
-  build: {context: .., dockerfile: docker/Dockerfile}
-  environment: {NEXUS_HOST: coordinator}
-  depends_on: [coordinator]
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  environment:
+    NEXUS_HOST: coordinator
+    NEXUS_BIND: 0.0.0.0
+    NEXUS_TRANSPORT: grpc
+  depends_on:
+    coordinator:
+      condition: service_healthy
+  deploy:
+    resources:
+      limits:
+        cpus: "1.00"
+        memory: 256M
+
 services:
   coordinator:
-    build: {context: .., dockerfile: docker/Dockerfile}
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
     command: python coordinator/main.py
-    environment: {NEXUS_BIND: 0.0.0.0}
-    ports: ["9000:9000"]
-  node1: {<<: *node, command: python nodes/node1/node.py}
-  node2: {<<: *node, command: python nodes/node2/node.py}
-  node3: {<<: *node, command: python nodes/node3/node.py}
+    environment:
+      NEXUS_BIND: 0.0.0.0
+      NEXUS_HOST: 0.0.0.0
+      NEXUS_PORT: 9000
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - nexus_storage:/app/storage
+      - nexus_db:/app/database
+    deploy:
+      resources:
+        limits:
+          cpus: "1.50"
+          memory: 512M
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s = socket.create_connection(('127.0.0.1', 9000), timeout=2); s.close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 3s
+
+  node1:
+    <<: *node
+    command: python nodes/node1/node.py
+    environment:
+      NEXUS_HOST: coordinator
+      NEXUS_BIND: 0.0.0.0
+      NEXUS_DATA_DIR: /app/storage/node-1
+      NEXUS_CPU_SLOTS: 2
+      NEXUS_MEM_MB: 256
+      NEXUS_IO_SLOTS: 2
+    volumes:
+      - nexus_storage:/app/storage
+
+  node2:
+    <<: *node
+    command: python nodes/node2/node.py
+    environment:
+      NEXUS_HOST: coordinator
+      NEXUS_BIND: 0.0.0.0
+      NEXUS_DATA_DIR: /app/storage/node-2
+      NEXUS_CPU_SLOTS: 2
+      NEXUS_MEM_MB: 256
+      NEXUS_IO_SLOTS: 2
+    volumes:
+      - nexus_storage:/app/storage
+
+  node3:
+    <<: *node
+    command: python nodes/node3/node.py
+    environment:
+      NEXUS_HOST: coordinator
+      NEXUS_BIND: 0.0.0.0
+      NEXUS_DATA_DIR: /app/storage/node-3
+      NEXUS_CPU_SLOTS: 2
+      NEXUS_MEM_MB: 256
+      NEXUS_IO_SLOTS: 2
+    volumes:
+      - nexus_storage:/app/storage
+
   dashboard:
     <<: *node
     command: python dashboard/app.py
-    ports: ["8080:8080"]
+    environment:
+      COORD_HOST: coordinator
+      COORD_PORT: 9000
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/status')"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  nexus_storage:
+  nexus_db:

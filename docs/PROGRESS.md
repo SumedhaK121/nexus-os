@@ -453,3 +453,55 @@
   # In web dashboard, navigate to Network / IPC to view live gRPC telemetry and run RPC/IPC benchmarks.
   ```
 - **Known Gaps**: Docker multi-container cluster setup, cgroup memory limits, live container metrics, and chaos testing to be implemented in Phase 9.
+
+---
+
+## Phase 9: Docker, Live Monitoring & Chaos Engineering
+- **Branch**: `phase-9-docker-chaos` (merged into `main`)
+- **Tag**: `phase-9-complete`
+- **Completed**: Yes
+- **What Was Done**:
+  1. Updated container infrastructure in `docker/`:
+     - `docker/Dockerfile`: Multi-stage build with system utilities, Python dependency installation, and production entrypoint `CMD ["python", "app.py"]`.
+     - `docker/docker-compose.yml`: Multi-container topology orchestrating `coordinator`, `node1`, `node2`, `node3`, and `dashboard` with resource limits (`mem_limit: 256m`, `cpus: 1.0`), healthchecks, and persistent named volumes (`nexus_storage`, `nexus_db`).
+  2. Implemented 3-state failure detector in `coordinator/main.py`:
+     - Transitions: `ONLINE` -> `SUSPECT` (after 4s without heartbeat) -> `OFFLINE` (after 6s).
+     - Automated recovery: Heartbeat from `SUSPECT`/`OFFLINE` node transitions it back to `ONLINE` and triggers `_on_node_up` callback.
+  3. Implemented Chaos Engineering Tool and API:
+     - `tools/chaos.py`: CLI and programmatic chaos injector supporting `kill`, `suspect`, `partition`, `heal`, and `delay`.
+     - Handler `CHAOS_ACTION` in `coordinator/api/ops_handlers.py`: Injects faults into cluster control plane, triggers failure callbacks (`_on_node_down`), closes sockets, and records events in Lamport event log.
+  4. Implemented Process Isolation & Cgroup Memory Enforcement Demo:
+     - `demo/isolation_demo.py`: Demonstrates cgroup memory limits (`memory.max` / Docker `mem_limit`). Runs a memory-hungry workload, tracks peak RSS via `psutil`, intercepts memory threshold breaches, and terminates with simulated SIGKILL (exit code 137) to prevent "Noisy Neighbor" memory exhaustion.
+     - Handler `ISO_DEMO` in `coordinator/api/ops_handlers.py`.
+  5. Implemented Live Container Telemetry:
+     - Updated `DOCKER_STATUS` in `ops_handlers.py` to probe Docker daemon via `docker ps` when running in Docker, or synthesize live container metrics from cluster nodes and `psutil` host statistics in multi-process mode.
+     - Embedded `containers` telemetry directly in `STATUS` message.
+  6. Upgraded Dashboard UI:
+     - Replaced static Docker table with interactive Docker Deployment & Live Container Telemetry panel in `dashboard/static/index.html` and `dashboard/static/script.js`.
+     - Added Chaos Engineering & Failure Injection control panel with interactive buttons (`💥 Kill Node`, `⏳ Delay Heartbeat`, `🚫 Partition Node`, `💚 Heal / Recover`, `⏱ Inject 250ms Delay`).
+     - Added Cgroup Memory Isolation & OOM Killer Demo runner.
+  7. Comprehensive test suite in `tests/test_phase9_monitoring.py` (5 tests covering 3-state failure detector transitions, chaos kill/heal, chaos suspect/delay, container telemetry, and process isolation OOM enforcement; 73 total tests passing).
+- **Files Changed/Created**:
+  - `docker/Dockerfile`
+  - `docker/docker-compose.yml`
+  - `coordinator/main.py`
+  - `coordinator/api/core_handlers.py`
+  - `coordinator/api/ops_handlers.py`
+  - `tools/chaos.py`
+  - `demo/isolation_demo.py`
+  - `dashboard/static/index.html`
+  - `dashboard/static/script.js`
+  - `tests/test_phase9_monitoring.py`
+  - `tools/smoke_test.py`
+  - `docs/CONTRACT.md`
+  - `docs/PROGRESS.md`
+- **How to Try It**:
+  ```bash
+  python -m unittest discover -s tests
+  python demo/isolation_demo.py 80
+  python tools/chaos.py kill node-1
+  python app.py
+  # In web dashboard, navigate to Docker view to inspect live container telemetry and execute chaos actions.
+  ```
+- **Known Gaps**: End-to-end integration scenario ("A Day in the Lab"), syllabus practicals mapping, real-life mapping, and v1.0 release to be implemented in Phase 10.
+
