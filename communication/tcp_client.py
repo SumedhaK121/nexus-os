@@ -1,5 +1,14 @@
-import json, socket, itertools, threading
+"""NEXUS-OS TCP Client & Connection Layer with Dual Logical Clocks.
+Maintains Lamport logical timestamps and Vector Clocks across request/response envelopes.
+Concept: Dual logical timestamping for causal message ordering and concurrency tracking.
+"""
+
+import itertools
+import json
+import socket
+import threading
 from distributed_clock.lamport_clock import LamportClock
+from distributed_clock.vector_clock import VectorClock
 
 
 class Conn:
@@ -8,25 +17,45 @@ class Conn:
         self.sock = sock
         self.rfile = sock.makefile("r", encoding="utf-8")
         self._wlock = threading.Lock()
+
     def send(self, msg):
-        data = (json.dumps(msg) + "\n").encode()
+        data = (json.dumps(msg) + "\n").encode("utf-8")
         with self._wlock:
             self.sock.sendall(data)
+
     def recv(self):
         line = self.rfile.readline()
         return json.loads(line) if line else None
+
     def close(self):
-        try: self.sock.close()
-        except OSError: pass
+        try:
+            self.sock.close()
+        except OSError:
+            pass
 
 
 class Client:
     """Request/response client used by the dashboard, CLI and tests."""
-    def __init__(self, host="127.0.0.1", port=9000):
-        self.conn, self.clock, self._id = Conn(socket.create_connection((host, port))), LamportClock(), itertools.count()
+    def __init__(self, host="127.0.0.1", port=9000, client_id="client"):
+        self.client_id = client_id
+        self.conn = Conn(socket.create_connection((host, int(port))))
+        self.clock = LamportClock()
+        self.vc = VectorClock(node_id=client_id)
+        self._id = itertools.count()
+
     def call(self, msg):
-        msg["ts"], msg["req_id"] = self.clock.tick(), next(self._id)
+        msg["ts"] = self.clock.tick()
+        msg["vc"] = self.vc.tick()
+        msg["req_id"] = next(self._id)
         self.conn.send(msg)
         while (r := self.conn.recv()) is not None:
-            self.clock.update(r.get("ts", 0))
-            if r.get("req_id") == msg["req_id"]: return r
+            if "ts" in r:
+                self.clock.update(r["ts"])
+            if "vc" in r:
+                self.vc.update(r["vc"])
+            if r.get("req_id") == msg["req_id"]:
+                return r
+        return None
+
+    def close(self):
+        self.conn.close()

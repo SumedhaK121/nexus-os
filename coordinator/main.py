@@ -1,9 +1,10 @@
-"""NEXUS-OS Coordinator.
-Central control plane for cluster management, job scheduling, distributed file catalog,
-and synchronization.
+"""NEXUS-OS Distributed Coordinator.
+Main entry point and orchestration server.
+Manages node registration, heartbeats, process dispatch, logical & vector clocks,
+fault tolerance, dynamic capacity aggregation, and distributed file system.
+Concept: Centralized NameNode / Cluster Master (Kubernetes kube-apiserver / Slurm slurmctld).
 """
 
-import csv
 import os
 import socket
 import sys
@@ -14,14 +15,14 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from communication.tcp_client import Conn
 from coordinator.api.handlers import install
-from coordinator.deadlock.bankers_algorithm import Banker
-from coordinator.file_manager.dfs_manager import DfsManager
 from coordinator.file_manager.file_manager import FileManager
+from coordinator.file_manager.dfs_manager import DfsManager
 from coordinator.node_manager.node_manager import NodeManager
 from coordinator.process_manager.process_manager import ProcessManager
 from coordinator.resource_manager.resource_manager import ResourceManager
 from coordinator.scheduler.node_selector import pick_node
 from distributed_clock.lamport_clock import LamportClock
+from distributed_clock.vector_clock import VectorClock
 
 try:
     import psutil
@@ -47,9 +48,10 @@ class Coordinator:
         self.host = host
         self.port = port
         self.clock = LamportClock()
+        self.vc = VectorClock(node_id="coordinator")
         self.nodes = {}            # node_id -> {conn, last_seen, cpu, load, done, status, addr}
         self.tasks = {}            # task_id -> {node, state, burst, ...}
-        self.events = []           # Lamport-stamped event log
+        self.events = []           # Lamport- and VC-stamped event log
         self.lock = threading.RLock()
         self.handlers = {}
         self.banker = None
@@ -108,6 +110,7 @@ class Coordinator:
                             "job_type": task.get("job_type", "sim"),
                             "args": task.get("args", []),
                             "ts": self.clock.tick(),
+                            "vc": self.vc.tick(),
                         }
                         try:
                             if self.nodes[new_nid].get("conn"):
@@ -135,11 +138,16 @@ class Coordinator:
             return fn
         return deco
 
-    def log(self, who, what):
+    def log(self, who, what, vc=None):
         t = self.clock.tick()
+        v = self.vc.tick() if vc is None else self.vc.merge(vc)
+        entry = {"T": t, "who": who, "event": what, "vc": dict(v)}
         with self.lock:
-            self.events.append({"T": t, "who": who, "event": what})
-        print(f"[T={t:>3}] {who}: {what}", flush=True)
+            self.events.append(entry)
+            if len(self.events) > 500:
+                self.events.pop(0)
+        vc_str = " ".join(f"{k}:{val}" for k, val in sorted(v.items()))
+        print(f"[T={t:>3}] [{vc_str}] {who}: {what}", flush=True)
 
     # ---------- server ----------
     def serve(self):
@@ -162,6 +170,9 @@ class Coordinator:
         try:
             while (msg := conn.recv()) is not None:
                 self.clock.update(msg.get("ts", 0))
+                if "vc" in msg:
+                    self.vc.update(msg.get("vc", {}))
+
                 mtype = msg.get("type", "?")
                 if mtype != "STATUS":
                     self.net[mtype] = self.net.get(mtype, 0) + 1
@@ -177,6 +188,7 @@ class Coordinator:
 
                 if reply is not None:
                     reply["ts"] = self.clock.tick()
+                    reply["vc"] = self.vc.tick()
                     reply["req_id"] = msg.get("req_id")
                     conn.send(reply)
         except (OSError, ValueError):

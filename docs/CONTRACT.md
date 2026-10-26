@@ -317,8 +317,19 @@ Every message transported over TCP or RPC carries logical timestamps:
 ## 5. Operations & Events (`coordinator/api/ops_handlers.py` & `clock_handlers.py`)
 
 ### `EVENTS`
-- **Payload**: `events`: list of event objects.
+- **Sender**: Worker Node -> Coordinator
+- **Payload**: `events`: list of event objects (`[{"ts": int, "vc": dict, "node_id": str, "event": str}]`), `node_id`: str.
 - **Reply**: `{"type": "EVENTS_ACK", "count": int}`
+
+### `CAUSAL_LOG`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `limit` (int), `node` (optional str), `filter` ("all"|"concurrent").
+- **Reply**: `{"type": "CAUSAL_LOG_RESULT", "current_lamport": int, "coordinator_vc": dict, "timeline": list, "concurrent_pairs": list}`
+
+### `CONCURRENT_DEMO`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{}`
+- **Reply**: `{"type": "CONCURRENT_DEMO_RESULT", "initial_state": dict, "event_a": dict, "event_b": dict, "relation": str, "explanation": str}`
 
 ### `UTIL`
 - **Payload**: `{}`

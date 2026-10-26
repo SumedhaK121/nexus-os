@@ -380,6 +380,7 @@ def register(coord):
             return {
                 "type": "STATUS",
                 "clock": c.clock.t,
+                "clock_vc": c.vc.to_dict() if hasattr(c, "vc") else {},
                 "nodes": nodes_status,
                 "tasks": tasks_dict,
                 "proc_table": pcb_table,

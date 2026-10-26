@@ -240,3 +240,51 @@
   # In web dashboard, navigate to Cache tab for Belady's Anomaly, or Sync tab for RWLock and Philosophers.
   ```
 - **Known Gaps**: Vector clocks and causal ordering across distributed nodes to be implemented in Phase 5.
+
+---
+
+## Phase 5: Logical Clocks & Merged Event Log
+- **Branch**: `phase-5-logical-clocks` (merged into `main`)
+- **Tag**: `phase-5-complete`
+- **Completed**: Yes
+- **What Was Done**:
+  1. Implemented Fidge-Mattern Vector Clocks in `distributed_clock/vector_clock.py`:
+     - Full partial-order causality evaluation: `BEFORE` ($V_1 < V_2$), `AFTER` ($V_1 > V_2$), `EQUAL` ($V_1 == V_2$), and `CONCURRENT` ($V_1 \parallel V_2$).
+     - Thread-safe operations: `tick()`, `update()`, `merge()`, `to_dict()`, `clone()`, `happens_before()`, and `are_concurrent()`.
+  2. Implemented dual logical timestamp envelopes (`ts` for Lamport clock, `vc` for Vector Clock) across all cluster communications:
+     - `communication/tcp_client.py`: `Client.call()` automatically injects `ts` and `vc`, updating local clocks on response.
+     - `coordinator/main.py`: Coordinator maintains both `LamportClock` and `VectorClock(node_id="coordinator")`. Stamps every log entry (`[T=...] [coord:X n1:Y ...]`), request reply, and dispatch message.
+     - `nodes/node.py`: Worker node maintains `VectorClock(node_id=self.id)`. Updates clocks on incoming TCP messages and RPC calls, and attaches vector clocks to heartbeats and task notifications.
+  3. Implemented node batch event buffering and causal timeline merging:
+     - `nodes/node.py`: Buffers local lifecycle and process events (`local_events`) and flushes them to the coordinator via `EVENTS` batches.
+     - `coordinator/api/clock_handlers.py`: Ingests `EVENTS`, merges node clocks into cluster timeline, and sorts events by `(Lamport T, node_id)`.
+     - Handler `CAUSAL_LOG`: Serves unified timeline and detects pairs of causally concurrent events.
+  4. Implemented interactive concurrency demonstration:
+     - `demo/vector_clock_scene.py`: Scripted walkthrough of sequential events ($E_1 \to E_2 \to E_3$), causal branching/concurrency ($E_4 \parallel E_5$), and coordinator reconciliation ($E_6$).
+     - Handler `CONCURRENT_DEMO`: Demonstrates how vector clocks identify concurrent writes where scalar Lamport clocks fail.
+  5. Upgraded Dashboard UI:
+     - Formatted Event Log entries with dual timestamp badges (Lamport $T$ + Vector Clock snapshot).
+     - Added "Demonstrate Concurrent Edits (Vector Clocks)" and "Detect Concurrent Event Pairs" controls to the Event Log view.
+  6. Comprehensive test suite in `tests/test_phase5_clocks.py` (6 tests covering comparisons, tick/update/merge, causal transitivity/antisymmetry, dual timestamp envelopes over TCP sockets, batch event sorting, and concurrent demo scene).
+- **Files Changed/Created**:
+  - `distributed_clock/vector_clock.py`
+  - `communication/tcp_client.py`
+  - `coordinator/main.py`
+  - `coordinator/api/clock_handlers.py`
+  - `coordinator/api/core_handlers.py`
+  - `coordinator/api/__init__.py`
+  - `nodes/node.py`
+  - `demo/vector_clock_scene.py`
+  - `dashboard/static/index.html`
+  - `dashboard/static/script.js`
+  - `tests/test_phase5_clocks.py`
+  - `docs/CONTRACT.md`
+  - `docs/PROGRESS.md`
+- **How to Try It**:
+  ```bash
+  python -m unittest discover -s tests
+  python demo/vector_clock_scene.py
+  python app.py
+  # In web dashboard, navigate to Event Log tab to view vector clocks and click "▶ Demonstrate Concurrent Edits"
+  ```
+- **Known Gaps**: Real node-to-node Ricart-Agrawala mutual exclusion and lease-based distributed lock manager to be implemented in Phase 6.
