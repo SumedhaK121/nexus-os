@@ -21,6 +21,7 @@ from distributed_clock.vector_clock import VectorClock
 from jobs import catalog
 from nodes.block_store import BlockStore
 from nodes.node_server import NodeServer
+from nodes.ra_participant import RaParticipant
 
 try:
     import psutil
@@ -49,6 +50,7 @@ class Node:
 
         # Block storage engine
         self.block_store = BlockStore(self.data_dir, self.id)
+        self.ra = RaParticipant(node_id=self.id, clock=self.clock)
 
         # Process tracking table
         self.local_procs = {}  # pid -> {popen, psutil, start, job_type}
@@ -89,6 +91,13 @@ class Node:
         self.server.register_method("CorruptBlock", self.block_store.corrupt_block)
         self.server.register_method("CacheStats", self.block_store.cache_stats)
         self.server.register_method("CacheConfig", self.block_store.cache_config)
+
+        # Ricart-Agrawala Distributed Mutual Exclusion endpoints
+        self.server.register_method("RaRequest", self.ra.handle_request)
+        self.server.register_method("RaReply", self.ra.handle_reply)
+        self.server.register_method("RaEnter", lambda p: {"type": "OK", "held": self.ra.request_cs(peers=p.get("peers", []))})
+        self.server.register_method("RaExit", lambda p: {"type": "OK", "released_count": self.ra.release_cs()})
+        self.server.register_method("RaStatus", lambda p: {"type": "OK", **self.ra.get_status()})
 
     def record_event(self, text):
         """Records a timestamped event into the local event log."""

@@ -283,6 +283,43 @@ Every message transported over TCP or RPC carries logical timestamps:
 - **Payload**: `nodes` (list), `requesters` (list).
 - **Reply**: `{"type": "RA_RESULT", "order": [...], "messages": int, "trace": [...]}`
 
+### `RA_CLUSTER_DEMO`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{}`
+- **Reply**: `{"type": "RA_CLUSTER_DEMO_RESULT", "nodes": [...], "trace": [...], "success": bool}`
+
+### `RA_COMPLEXITY`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{}`
+- **Reply**: `{"type": "RA_COMPLEXITY_RESULT", "algorithm": str, "message_complexity": "2(N-1)", "table": [...]}`
+
+### `LOCK_ACQUIRE`
+- **Sender**: Client / Worker Node -> Coordinator
+- **Payload**: `name` (str), `client_id` (str), `lease_sec` (optional float).
+- **Reply**: `{"type": "LOCK_OK", "lock": str, "holder": str, "lease_sec": float, "expiry": float}` or `{"type": "LOCK_DENIED", ...}`
+
+### `LOCK_RELEASE`
+- **Sender**: Client / Worker Node -> Coordinator
+- **Payload**: `name` (str), `client_id` (str).
+- **Reply**: `{"type": "LOCK_OK", "lock": str, "released_by": str, "granted_to": optional str}` or `{"type": "ERROR"}`
+
+### `LOCK_RENEW`
+- **Sender**: Client / Worker Node -> Coordinator
+- **Payload**: `name` (str), `client_id` (str), `lease_sec` (optional float).
+- **Reply**: `{"type": "LOCK_OK", "lock": str, "renewed": true, "expiry": float}` or `{"type": "ERROR"}`
+
+### `LOCK_STATUS`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{}`
+- **Reply**: `{"type": "LOCK_STATUS_RESULT", "locks": {...}}`
+
+### Node-Level Ricart-Agrawala RPCs (`nodes/ra_participant.py`)
+- `RaRequest`: `{"req_node": str, "ts": int}` -> `{"type": "RaReply", ...}` or `{"type": "RaDeferred", ...}`
+- `RaReply`: `{"from_node": str, "ts": int}` -> `{"type": "OK"}`
+- `RaEnter`: `{"peers": [node_ids...]}` -> `{"type": "OK", "held": bool}`
+- `RaExit`: `{}` -> `{"type": "OK", "released_count": int}`
+- `RaStatus`: `{}` -> `{"type": "OK", "node_id": str, "state": str, "req_ts": [...], "deferred_nodes": [...]}`
+
 ### `SYNC_DEMO`
 - **Payload**: `kind` ("mutex" or omit for producer-consumer).
 - **Reply**: `{"type": "SYNC_RESULT", ...}`

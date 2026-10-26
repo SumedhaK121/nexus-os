@@ -21,6 +21,7 @@ from coordinator.node_manager.node_manager import NodeManager
 from coordinator.process_manager.process_manager import ProcessManager
 from coordinator.resource_manager.resource_manager import ResourceManager
 from coordinator.scheduler.node_selector import pick_node
+from coordinator.synchronization.lock_manager import DistributedLockManager
 from distributed_clock.lamport_clock import LamportClock
 from distributed_clock.vector_clock import VectorClock
 
@@ -68,6 +69,7 @@ class Coordinator:
         self.proc_mgr = ProcessManager()
         self.res_mgr = ResourceManager()
         self.dfs = DfsManager(coord=self)
+        self.locks = DistributedLockManager(coord=self)
 
         # Subscribe to node failure events
         self.node_mgr.subscribe_node_down(self._on_node_down)
@@ -85,6 +87,10 @@ class Coordinator:
 
     def _on_node_down(self, node_id):
         self.log("coordinator", f"Node failure detected: {node_id} is OFFLINE")
+        # 0. Auto-release locks held by failed node
+        if hasattr(self, "locks"):
+            self.locks.on_node_down(node_id)
+
         # 1. Update DFS metadata and trigger self-healing re-replication
         if hasattr(self, "dfs"):
             self.dfs.meta.mark_node_offline(node_id)
