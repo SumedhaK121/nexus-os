@@ -147,3 +147,42 @@
   # In web dashboard, navigate to Deadlock Detection tab and click "🔍 Live Cluster WFG"
   ```
 - **Known Gaps**: Distributed block-based storage (64KB chunks, pipeline replication) to be implemented in Phase 3.
+
+---
+
+## Phase 3: Distributed Block-based File System (DFS)
+- **Branch**: `phase-3-distributed-fs` (merged into `main`)
+- **Tag**: `phase-3-complete`
+- **Completed**: Yes
+- **What Was Done**:
+  1. Created `nodes/block_store.py` (DataNode storage engine) managing block storage under `blocks/`, with SHA-256 integrity verification, pipeline replication forwarding, and RPC methods `PutBlock`, `GetBlock`, `DeleteBlock`, `ListBlocks`, and `CorruptBlock`.
+  2. Implemented persistent NameNode metadata catalog in `coordinator/file_manager/dfs_metadata.py` using SQLite (`database/metadata.db`). Persists hierarchical directories, file inodes, versions, checksums, block sequence mappings, replica health states, and POSIX-style permission checking (`mkdir`, `rmdir`, `ls`, `chmod`, `rename`, `check_permission`).
+  3. Implemented cluster DFS orchestration in `coordinator/file_manager/dfs_manager.py`:
+     - 64 KB block chunking (configurable via `NEXUS_BLOCK_KB`).
+     - Pipeline replication across cluster nodes (replication factor 2, configurable via `NEXUS_REPLICAS`).
+     - Fault-tolerant failover reads: transparently detects corrupt SHA-256 blocks and fails over to alternate healthy replicas.
+     - Self-healing re-replication: automatically detects under-replicated blocks upon node disconnect (`re_replicate_under_replicated`) and coordinates donor-to-destination transfers to restore target replication factor.
+     - Data integrity scrubber (`FS_SCRUB`): scans all cluster replicas, flags corruptions, and auto-repairs corrupted blocks from healthy replicas.
+  4. Integrated DFS into `coordinator/main.py` with failure callbacks, and registered API handlers in `coordinator/api/file_handlers.py` (`FS_MKDIR`, `FS_LS`, `FS_RMDIR`, `FS_STAT`, `FS_CHMOD`, `FS_RENAME`, `FS_WRITE`, `FS_READ`, `FS_DELETE`, `FS_SCRUB`) while preserving backward-compatible `FILE_*` endpoints.
+  5. Upgraded Dashboard UI with DFS Cluster Namespace manager, directory browser with POSIX permission badges, detailed block layout viewer (seq, hash, node replicas), node block load distribution, and one-click DFS Scrub & Repair tool.
+  6. Implemented comprehensive test suite in `tests/test_phase3_dfs.py` (7 tests covering chunking, pipeline writes, failover reads, scrub auto-repair, re-replication on node crash, POSIX permissions, and metadata persistence across DB reopen).
+- **Files Changed/Created**:
+  - `nodes/block_store.py`
+  - `nodes/node.py`
+  - `coordinator/file_manager/dfs_metadata.py`
+  - `coordinator/file_manager/dfs_manager.py`
+  - `coordinator/main.py`
+  - `coordinator/api/file_handlers.py`
+  - `coordinator/api/core_handlers.py`
+  - `dashboard/static/index.html`
+  - `dashboard/static/script.js`
+  - `tests/test_phase3_dfs.py`
+  - `docs/CONTRACT.md`
+  - `docs/PROGRESS.md`
+- **How to Try It**:
+  ```bash
+  python -m unittest discover -s tests
+  python app.py
+  # In web dashboard, navigate to File Manager to explore the DFS directory tree, block layouts, and scrubber.
+  ```
+- **Known Gaps**: Per-node block caching (LRU/FIFO/Optimal trace replay) and local synchronization primitives to be implemented in Phase 4.

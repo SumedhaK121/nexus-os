@@ -145,7 +145,10 @@ Every message transported over TCP or RPC carries logical timestamps:
     "net": { ... },
     "cache": { ... },
     "replicas": { ... },
-    "banker": { ... }
+    "banker": { ... },
+    "dfs_files": [ ... ],
+    "dfs_node_counts": { ... },
+    "dfs_under_replicated": 0
   }
   ```
 
@@ -176,6 +179,65 @@ Every message transported over TCP or RPC carries logical timestamps:
 ---
 
 ## 3. Distributed File & Cache Messages (`coordinator/api/file_handlers.py`)
+
+### `FS_MKDIR`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `path` (str), `user` (optional str, default "root"), `perms` (optional int, default 0o755).
+- **Reply**: `{"type": "OK", "path": str}` or `{"type": "ERROR", "error": str}`
+
+### `FS_LS`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `path` (optional str, default "/").
+- **Reply**: `{"type": "FS_LS_RESULT", "path": str, "entries": [{"path": str, "name": str, "is_dir": int, "size": int, "owner": str, "perms": int, "version": int}]}`
+
+### `FS_RMDIR`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `path` (str).
+- **Reply**: `{"type": "OK", "path": str}` or `{"type": "ERROR", "error": str}`
+
+### `FS_STAT`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `path` (str).
+- **Reply**: `{"type": "FS_STAT_RESULT", "stat": {"path": str, "is_dir": int, "size": int, "version": int, "checksum": str, "blocks": [...]}}`
+
+### `FS_CHMOD`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `path` (str), `perms` (int), `user` (optional str).
+- **Reply**: `{"type": "OK", "path": str, "perms": int}` or `{"type": "ERROR"}`
+
+### `FS_RENAME` / `FS_MOVE`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `src` (str), `dst` (str), `user` (optional str).
+- **Reply**: `{"type": "OK", "src": str, "dst": str}` or `{"type": "ERROR", "error": str}`
+
+### `FS_WRITE`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `path` (str), `content` (str or bytes), `user` (optional str), `base` (optional int).
+- **Reply**: `{"type": "FILE_OK", "name": str, "path": str, "version": int, "size": int, "blocks": int, "checksum": str, "nodes": [...]}` or `{"type": "CONFLICT", ...}` or `{"type": "ERROR"}`
+
+### `FS_READ`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `path` (str), `user` (optional str).
+- **Reply**: `{"type": "FILE_OK", "name": str, "path": str, "content": str, "size": int, "version": int, "checksum": str, "blocks": int, "source": "dfs_cluster"}` or `{"type": "ERROR"}`
+
+### `FS_DELETE`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `path` (str), `user` (optional str).
+- **Reply**: `{"type": "OK", "path": str}` or `{"type": "ERROR", "error": str}`
+
+### `FS_SCRUB`
+- **Sender**: Client / Dashboard -> Coordinator
+- **Payload**: `repair` (bool, default true).
+- **Reply**: `{"type": "SCRUB_RESULT", "report": {...}, "corrupted_detected": int, "repaired": int}`
+
+### Node-Level Block Store RPCs (`nodes/block_store.py`)
+- `PutBlock`: `{"block_id": str, "data": str/b64, "base64": bool, "checksum": str, "forward_to": [node_ids...]}` -> `{"type": "OK", "block_id": str, "size": int, "checksum": str, "forwarded": [...]}`
+- `GetBlock`: `{"block_id": str}` -> `{"type": "OK", "block_id": str, "data": str/b64, "checksum": str, "base64": bool}`
+- `DeleteBlock`: `{"block_id": str}` -> `{"type": "OK", "block_id": str}`
+- `ListBlocks`: `{}` -> `{"type": "OK", "node_id": str, "blocks": [...], "count": int}`
+- `CorruptBlock`: `{"block_id": str}` -> `{"type": "OK", "corrupted": str}`
+
+### Backward-Compatible Legacy `FILE_*` Handlers
 
 ### `FILE_WRITE`
 - **Payload**: `name` (str), `content` (str), `base` (optional int version).
