@@ -503,3 +503,26 @@ Every message transported over TCP or RPC carries logical timestamps:
   - `RaReply(RaReplyMessage) returns (RaAck)`
   - `Ping(PingRequest) returns (PingReply)`
   - `SyncPull(SyncPullRequest) returns (SyncPullReply)`
+
+---
+
+## 7. Operations, Chaos & Container Telemetry (`coordinator/api/ops_handlers.py`)
+
+### `DOCKER_STATUS`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{}`
+- **Reply**: `{"type": "DOCKER_STATUS", "mode": "docker_compose"|"process_cluster", "containers": [...], "nodes": [...], "host_stats": {...}, "note": str}`
+- **Owning Module**: `coordinator/api/ops_handlers.py`
+
+### `CHAOS_ACTION`
+- **Sender**: Dashboard / CLI / `tools/chaos.py` -> Coordinator
+- **Payload**: `{"type": "CHAOS_ACTION", "action": "kill"|"suspect"|"partition"|"heal"|"delay", "node_id": str, "delay_ms": optional int}`
+- **Reply**: `{"type": "CHAOS_RESULT", "action": str, "node_id": str, "status": str, "delay_ms": optional int}`
+- **Owning Module**: `coordinator/api/ops_handlers.py`
+
+### `ISO_DEMO`
+- **Sender**: Dashboard / CLI -> Coordinator
+- **Payload**: `{"type": "ISO_DEMO", "limit_mb": optional int, "leak_target_mb": optional int}`
+- **Reply**: `{"type": "ISO_DEMO_RESULT", "pid": int, "limit_mb": int, "peak_rss_mb": float, "oom_killed": bool, "exit_code": int}`
+- **Owning Module**: `coordinator/api/ops_handlers.py`
+
