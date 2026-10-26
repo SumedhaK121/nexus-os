@@ -18,14 +18,24 @@ class Conn:
         self.rfile = sock.makefile("r", encoding="utf-8")
         self._wlock = threading.Lock()
 
-    def send(self, msg):
+    def send(self, msg, max_size=16 * 1024 * 1024):
+        if not isinstance(msg, dict):
+            msg = {"type": "ERROR", "error": "Message payload must be a dictionary"}
         data = (json.dumps(msg) + "\n").encode("utf-8")
+        if len(data) > max_size:
+            err_dict = {"type": "ERROR", "error": f"Message size {len(data)} exceeds limit {max_size}"}
+            data = (json.dumps(err_dict) + "\n").encode("utf-8")
         with self._wlock:
             self.sock.sendall(data)
 
-    def recv(self):
-        line = self.rfile.readline()
-        return json.loads(line) if line else None
+    def recv(self, max_size=16 * 1024 * 1024):
+        line = self.rfile.readline(max_size)
+        if not line:
+            return None
+        try:
+            return json.loads(line)
+        except json.JSONDecodeError:
+            return {"type": "ERROR", "error": "Malformed JSON payload"}
 
     def close(self):
         try:

@@ -1,0 +1,251 @@
+syntax = "proto3";
+
+package nexus;
+
+// NEXUS-OS Distributed Coordinator Service (Kubernetes / Slurm / HDFS NameNode style)
+service Coordinator {
+  rpc Register (RegisterRequest) returns (RegisterReply);
+  rpc Heartbeat (HeartbeatRequest) returns (HeartbeatReply);
+  rpc SubmitJob (SubmitJobRequest) returns (SubmitJobReply);
+  rpc ReportTask (ReportTaskRequest) returns (ReportTaskReply);
+  rpc Status (StatusRequest) returns (StatusReply);
+  rpc StreamTasks (StreamTasksRequest) returns (stream TaskExecution);
+}
+
+// NEXUS-OS Worker Node Service (Kubelet / HDFS DataNode style)
+service NodeService {
+  rpc ExecuteTask (ExecuteTaskRequest) returns (ExecuteTaskReply);
+  rpc PutBlock (PutBlockRequest) returns (PutBlockReply);
+  rpc GetBlock (GetBlockRequest) returns (GetBlockReply);
+  rpc DeleteBlock (DeleteBlockRequest) returns (DeleteBlockReply);
+  rpc RaRequest (RaRequestMessage) returns (RaReplyMessage);
+  rpc RaReply (RaReplyMessage) returns (RaAck);
+  rpc Ping (PingRequest) returns (PingReply);
+  rpc SyncPull (SyncPullRequest) returns (SyncPullReply);
+}
+
+// =================== Common Message Envelopes ===================
+
+message RegisterRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string node_id = 3;
+  string host = 4;
+  int32 port = 5;
+  int32 cpu_slots = 6;
+  int32 mem_mb = 7;
+  int32 io_slots = 8;
+}
+
+message RegisterReply {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string type = 3;
+  string node_id = 4;
+  bool success = 5;
+  string error = 6;
+}
+
+message HeartbeatRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string node_id = 3;
+  float cpu = 4;
+  float mem = 5;
+  int32 load = 6;
+}
+
+message HeartbeatReply {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string type = 3;
+  bool ok = 4;
+}
+
+message SubmitJobRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string pid = 3;
+  string job_type = 4;
+  float burst = 5;
+  int32 priority = 6;
+  string algo = 7;
+  string user = 8;
+  string params_json = 9;
+}
+
+message SubmitJobReply {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string type = 3;
+  string pid = 4;
+  string status = 5;
+  string node_id = 6;
+  string error = 7;
+}
+
+message ReportTaskRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string pid = 3;
+  string node_id = 4;
+  string status = 5;
+  float wall_time_sec = 6;
+  float cpu_time_sec = 7;
+  string output = 8;
+  string error = 9;
+}
+
+message ReportTaskReply {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string type = 3;
+  bool ok = 4;
+}
+
+message StatusRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  bool full = 3;
+}
+
+message StatusReply {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string json_status = 3;
+}
+
+message StreamTasksRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string node_id = 3;
+}
+
+message TaskExecution {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string pid = 3;
+  string job_type = 4;
+  float burst = 5;
+  int32 priority = 6;
+  string params_json = 7;
+}
+
+// =================== Node Service Messages ===================
+
+message ExecuteTaskRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string pid = 3;
+  string job_type = 4;
+  float burst = 5;
+  int32 priority = 6;
+  string params_json = 7;
+}
+
+message ExecuteTaskReply {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string pid = 3;
+  string status = 4;
+  string error = 5;
+}
+
+message PutBlockRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string block_id = 3;
+  bytes data = 4;
+  string checksum = 5;
+  repeated string forward_to = 6;
+}
+
+message PutBlockReply {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string type = 3;
+  string block_id = 4;
+  string status = 5;
+  string error = 6;
+}
+
+message GetBlockRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string block_id = 3;
+}
+
+message GetBlockReply {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string type = 3;
+  string block_id = 4;
+  bytes data = 5;
+  string checksum = 6;
+  string error = 7;
+}
+
+message DeleteBlockRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string block_id = 3;
+}
+
+message DeleteBlockReply {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string type = 3;
+  string block_id = 4;
+  bool deleted = 5;
+  string error = 6;
+}
+
+message RaRequestMessage {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string req_node = 3;
+  int64 req_ts = 4;
+}
+
+message RaReplyMessage {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string from_node = 3;
+  bool deferred = 4;
+}
+
+message RaAck {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  bool ok = 3;
+}
+
+message PingRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string client_id = 3;
+}
+
+message PingReply {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string type = 3;
+  string node_id = 4;
+}
+
+message SyncPullRequest {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string path = 3;
+}
+
+message SyncPullReply {
+  int64 ts = 1;
+  map<string, int64> vc = 2;
+  string type = 3;
+  string path = 4;
+  bytes content = 5;
+  int32 version = 6;
+  map<string, int64> remote_vc = 7;
+  string error = 8;
+}
