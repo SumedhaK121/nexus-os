@@ -748,13 +748,13 @@ async function runRpcBench() {
 }
 
 async function runIpcBench() {
-  toast("Running Practical 9 IPC Benchmark (Sockets vs Shared Memory)...");
+  toast("Running IPC Benchmark (Sockets vs Shared Memory)...");
   const r = await api({ type: "IPC_BENCH", iterations: 50, payload_bytes: 4096 });
   if (r.type == "ERROR") return toast(r.error, 0);
   const sock = r.tcp_socket, shm = r.shared_memory;
   $("rpcBenchOut").innerHTML = `
     <div class="card" style="border:1px solid #2563eb">
-      <h4>OSDS Practical 9: ${r.practical}</h4>
+      <h4>${r.practical || "Inter-Process Communication (IPC) Benchmark — Sockets vs Shared Memory"}</h4>
       <table>
         <tr><th>IPC Mechanism</th><th>Payload</th><th>Avg Latency</th><th>p99 Latency</th><th>Throughput</th></tr>
         <tr><td><b>${sock.mechanism}</b></td><td>${sock.payload_bytes} B</td><td>${sock.avg_latency_us} µs</td><td>${sock.p99_latency_us} µs</td><td>${sock.throughput_mb_s} MB/s</td></tr>

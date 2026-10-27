@@ -132,13 +132,13 @@ docker compose -f docker/docker-compose.yml up --build
 
 ## 5. Demonstration Highlights & CLI Utilities
 
-### 5.1 OSDS Practical 9: IPC Benchmark (Sockets vs Shared Memory)
+### 5.1 Inter-Process Communication (IPC) Benchmark (Sockets vs Shared Memory)
 Compare loopback TCP sockets vs zero-copy POSIX shared memory:
 ```bash
 python tools/ipc_demo.py --iterations 50 --size 4096
 ```
 
-### 5.2 OSDS Practical 11: RPC Micro-Benchmark (TCP-JSON vs gRPC HTTP/2)
+### 5.2 Remote Procedure Call (RPC) Micro-Benchmark (TCP-JSON vs gRPC HTTP/2)
 Compare serialized TCP-JSON vs binary Protocol Buffers over gRPC:
 ```bash
 python tools/rpc_bench.py --iterations 20 --payload-kb 8
@@ -234,7 +234,7 @@ nexus_os/
 ├── tests/                           # 76 unit and end-to-end integration test cases
 └── tools/
     ├── chaos.py                     # CLI chaos engineering injector
-    ├── ipc_demo.py                  # Practical 9 IPC benchmark (Sockets vs Shared Memory)
+    ├── ipc_demo.py                  # IPC benchmark tool (Sockets vs Shared Memory)
     ├── rpc_bench.py                 # RPC micro-benchmark (TCP-JSON vs gRPC)
     ├── vmstat_snapshot.py           # Virtual memory and swap telemetry tool
     └── gen_proto.py                 # Protobuf compiler utility

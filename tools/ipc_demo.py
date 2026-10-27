@@ -1,4 +1,4 @@
-"""NEXUS-OS Inter-Process Communication (IPC) Benchmark Tool (OSDS Practical 9).
+"""NEXUS-OS Inter-Process Communication (IPC) Benchmark Tool.
 Compares Loopback TCP Socket IPC vs Shared Memory IPC (multiprocessing.shared_memory).
 Demonstrates zero-copy memory mapping vs kernel socket buffer copies.
 Concept: IPC mechanisms (Sockets, Shared Memory, Semaphores, Pipes, POSIX shm).
@@ -162,7 +162,7 @@ def benchmark_shared_memory(iterations=200, payload_size=4096):
 
 
 def run_ipc_benchmark(iterations=200, payload_size=4096):
-    """Executes full Practical 9 IPC benchmark comparison."""
+    """Executes full IPC benchmark comparison."""
     sock_res = benchmark_socket_ipc(iterations=iterations, payload_size=payload_size)
     shm_res = benchmark_shared_memory(iterations=iterations, payload_size=payload_size)
 
@@ -171,7 +171,7 @@ def run_ipc_benchmark(iterations=200, payload_size=4096):
         speedup = round(sock_res["avg_latency_us"] / shm_res["avg_latency_us"], 2)
 
     return {
-        "practical": "Practical 9: Inter-Process Communication (Sockets vs Shared Memory)",
+        "practical": "Inter-Process Communication (IPC) Benchmark — Sockets vs Shared Memory",
         "iterations": iterations,
         "payload_bytes": payload_size,
         "tcp_socket": sock_res,
