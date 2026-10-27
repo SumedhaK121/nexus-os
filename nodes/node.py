@@ -55,6 +55,7 @@ class Node:
 
         # Process tracking table
         self.local_procs = {}  # pid -> {popen, psutil, start, job_type}
+        self.active_tasks = set()
         self.proc_lock = threading.Lock()
 
         # Start internal RPC server on an ephemeral port
@@ -234,20 +235,31 @@ class Node:
         print(f"[{self.id}] T={self.clock.t} EXEC {pid} ({job_type}, burst={burst})", flush=True)
         self.record_event(f"EXEC {pid} ({job_type}, burst={burst})")
 
-        if job_type == "sim":
-            time.sleep(burst * 0.3)
-            self.record_event(f"Completed {pid} (simulated)")
-            self.send({"type": "TASK_DONE", "pid": pid, "node_id": self.id, "burst": burst})
-            return
+        with self.proc_lock:
+            self.active_tasks.add(pid)
+        self.send({"type": "TASK_STARTED", "pid": pid, "node_id": self.id, "job_type": job_type})
 
         cmd = catalog.get_command(job_type, args)
-        if not cmd:
-            time.sleep(burst * 0.3)
-            self.record_event(f"Completed {pid} (fallback)")
-            self.send({"type": "TASK_DONE", "pid": pid, "node_id": self.id, "burst": burst})
+        if job_type == "sim" or not cmd:
+            start_time = time.time()
+            # Run simulation with observable duration (min 1.0s, scaled by burst)
+            sim_duration = max(1.0, min(4.0, float(burst) * 0.4))
+            time.sleep(sim_duration)
+            wall_time = round(time.time() - start_time, 3)
+            with self.proc_lock:
+                self.active_tasks.discard(pid)
+            self.record_event(f"Completed {pid} (burst={burst})")
+            self.send({
+                "type": "TASK_DONE",
+                "pid": pid,
+                "node_id": self.id,
+                "burst": burst,
+                "wall_time": wall_time,
+                "cpu_time": wall_time,
+                "exit_code": 0,
+            })
             return
 
-        self.send({"type": "TASK_STARTED", "pid": pid, "node_id": self.id, "job_type": job_type})
         start_time = time.time()
         try:
             p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -272,6 +284,7 @@ class Node:
 
             with self.proc_lock:
                 self.local_procs.pop(pid, None)
+                self.active_tasks.discard(pid)
 
             if p.returncode == 0:
                 self.record_event(f"Completed {pid} in {wall_time:.2f}s")
@@ -297,6 +310,7 @@ class Node:
         except Exception as e:
             with self.proc_lock:
                 self.local_procs.pop(pid, None)
+                self.active_tasks.discard(pid)
             self.record_event(f"Exception on {pid}: {str(e)}")
             self.send({
                 "type": "TASK_FAILED",
@@ -331,7 +345,7 @@ class Node:
                 cpu = round(os.getloadavg()[0] * 10, 1)
 
             with self.proc_lock:
-                running_count = len(self.local_procs)
+                running_count = len(self.active_tasks)
 
             try:
                 self.send({

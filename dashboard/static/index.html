@@ -1,50 +1,575 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>NEXUS-OS Control Center</title><link rel="stylesheet" href="/static/style.css"></head><body>
-<aside><div class="logo"><i>N</i><div><b>NEXUS<span>-OS</span></b><small>DISTRIBUTED CLUSTER</small></div></div>
-<nav><a data-v="overview" class="on">System Overview</a><a data-v="nodes">Node Monitor</a><a data-v="proc">Process Manager</a><a data-v="res">Resource Manager</a><a data-v="files">Distributed Files</a><a data-v="dead">Deadlock Detection</a><a data-v="cache">Cache &amp; Paging</a><a data-v="sync">Synchronization</a><a data-v="netp">Network / IPC</a><a data-v="dock">Docker</a><a data-v="ev">Lamport &amp; Events</a></nav>
-<div class="coord"><span id="dot"></span><div><b>Coordinator</b><small id="cstat">connecting…</small></div></div></aside>
-<main><header><div><small>DISTRIBUTED SYSTEMS / CONTROL CENTER</small><h1 id="title">System Overview</h1></div><div><span class="chip" id="clk">Lamport T=0</span> <span class="chip live">LIVE</span></div></header>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NEXUS-OS Distributed Cluster Control Center</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<aside>
+  <div class="logo">
+    <i>N</i>
+    <div>
+      <b>NEXUS<span>-OS</span></b>
+      <small>DISTRIBUTED CLUSTER</small>
+    </div>
+  </div>
+  <nav>
+    <a data-v="overview" class="on">System Overview</a>
+    <a data-v="nodes">Node Monitor</a>
+    <a data-v="proc">Process Manager</a>
+    <a data-v="res">Resource Manager</a>
+    <a data-v="dead">Deadlock Detection</a>
+    <a data-v="cache">Cache &amp; Paging</a>
+    <a data-v="sync">Synchronization</a>
+    <a data-v="files">Distributed Files</a>
+    <a data-v="netp">Network / IPC</a>
+    <a data-v="ev">Lamport &amp; Events</a>
+    <a data-v="fault">Fault Tolerance</a>
+  </nav>
+  <div class="coord">
+    <span id="dot"></span>
+    <div>
+      <b>Coordinator</b>
+      <small id="cstat">connecting…</small>
+    </div>
+  </div>
+</aside>
 
-<section id="overview" class="view on"><div class="grid4" id="stats"></div>
-<div class="grid2"><div class="card"><h3>Running processes (live)</h3><svg id="spark" viewBox="0 0 400 60" preserveAspectRatio="none"></svg></div><div class="card"><h3>Latest events</h3><div class="log" id="evMini"></div></div></div>
-<h3 class="sec">Worker nodes</h3><div class="grid3" id="nodeMini"></div></section>
+<main>
+  <header>
+    <div>
+      <small>DISTRIBUTED OPERATING SYSTEM / CONTROL CENTER</small>
+      <h1 id="title">System Overview</h1>
+    </div>
+    <div>
+      <span class="chip" id="clk">Lamport T=0</span>
+      <span class="chip live">LIVE</span>
+    </div>
+  </header>
 
-<section id="nodes" class="view"><div class="grid3" id="nodeGrid"></div></section>
+  <!-- 1. SYSTEM OVERVIEW -->
+  <section id="overview" class="view on">
+    <div class="grid4" id="stats"></div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Cluster Task Activity (Live Execution)</h3>
+        <div id="sparkContainer">
+          <svg id="spark" viewBox="0 0 400 60" preserveAspectRatio="none"></svg>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Recent Cluster Events</h3>
+        <div class="log" id="evMini"></div>
+      </div>
+    </div>
+    <h3 class="sec">Worker Node Health Summary</h3>
+    <div class="grid3" id="nodeMini"></div>
+  </section>
 
-<section id="proc" class="view"><div class="card"><h3>Submit processes to the cluster</h3><table id="pt"></table>
-<div class="row"><button class="ghost" onclick="addRow()">+ Process</button><select id="algo"><option value="fcfs">FCFS</option><option value="sjf">SJF</option><option value="srtf">SRTF (Preemptive)</option><option value="priority">Priority</option><option value="priority_aging">Priority + Aging</option><option value="rr">Round Robin</option></select><input id="q" type="number" value="2" min="1" title="RR quantum"><button onclick="submit()">Submit</button><button class="ghost" onclick="compare()">Compare All</button><button class="ghost" onclick="submitTrace()">Submit Lab Trace (15 Jobs)</button></div><div id="out"></div></div>
-<div class="card"><h3>Cluster Process Control Blocks (PCB Table)</h3><table><thead><tr><th>PID</th><th>Job Type</th><th>Node</th><th>Burst</th><th>Priority</th><th>State</th><th>Actions</th></tr></thead><tbody id="tasks"></tbody></table></div>
-<div class="card"><h3>Measured Execution Metrics vs Predicted Simulator</h3><div class="row" style="margin-top:0"><button onclick="loadMetrics()">Refresh Measured Metrics</button><span id="csvNote" class="mut" style="margin-left:12px"></span></div><div id="metricsOut"></div><h4 style="margin-top:14px">Real Gantt Chart (Actual Execution Timestamps)</h4><div id="realGantt"></div></div></section>
+  <!-- 2. NODE MONITOR -->
+  <section id="nodes" class="view">
+    <div class="card" style="margin-bottom:16px">
+      <h3>Cluster Membership &amp; Heartbeat Detection Protocol</h3>
+      <p class="mut">
+        Heartbeat Interval: <b>2.0s</b> · Suspect Threshold: <b>&gt; 4.0s</b> · Eviction / Failover Threshold: <b>&gt; 6.0s</b>.
+        Failure detection follows a 3-state model (ONLINE &rarr; SUSPECT &rarr; OFFLINE).
+      </p>
+    </div>
+    <div class="grid3" id="nodeGrid"></div>
+  </section>
 
-<section id="res" class="view"><div class="card"><h3>Banker's Algorithm — Deadlock Avoidance (Admission Control)</h3><div class="row"><button id="bToggle" class="ghost" onclick="toggleBanker()">Admission Banker: ON</button><button onclick="bInit()">Load textbook example</button><select id="bp"></select><input id="br" value="1,0,2" title="request vector"><button class="ghost" onclick="bReq()">Request resources</button></div><p class="mut">Admission control checks if safe sequence exists. If Banker is OFF, greedy acquisition leads to circular waits.</p><div id="bTable"></div></div>
-<div class="card"><h3>Resource utilization (CPU / Memory / I/O)</h3><div id="util"></div></div></section>
+  <!-- 3. PROCESS MANAGER -->
+  <section id="proc" class="view">
+    <div class="card">
+      <h3>Submit Processes to Cluster</h3>
+      <table id="pt"></table>
+      <div class="row">
+        <button class="ghost" onclick="addRow()">+ Process</button>
+        <select id="algo">
+          <option value="fcfs">FCFS (First-Come, First-Served)</option>
+          <option value="sjf">SJF (Shortest Job First)</option>
+          <option value="srtf">SRTF (Preemptive Shortest Remaining)</option>
+          <option value="priority">Priority (Non-Preemptive)</option>
+          <option value="priority_aging">Priority + Aging (Starvation-Free)</option>
+          <option value="rr">Round Robin (Preemptive Time-Slice)</option>
+        </select>
+        <input id="q" type="number" value="2" min="1" title="RR Quantum" style="max-width:70px">
+        <button onclick="submit()">Submit</button>
+        <button class="ghost" onclick="compare()">Compare All</button>
+        <button class="ghost" onclick="submitTrace()" style="font-size:11px;opacity:0.85">+ Submit Benchmark Trace (15 Jobs)</button>
+      </div>
+      <div id="out"></div>
+    </div>
 
-<section id="files" class="view"><div class="card"><h3>Distributed File System (DFS) Cluster Namespace</h3><p class="mut">HDFS/GFS architecture: files partitioned into 64 KB blocks with 2x pipeline replication across nodes.</p><div class="row" style="margin-top:0"><input id="dfsPath" value="/" style="max-width:240px" placeholder="/path"><button onclick="dfsLs()">List Directory</button><input id="dfsMkdirPath" style="max-width:200px" placeholder="New dir (/datasets)"><button class="ghost" onclick="dfsMkdir()">Mkdir</button><button class="ghost" onclick="dfsScrub(true)">Scrub &amp; Repair DFS</button></div><div id="dfsSummary" class="row" style="margin:10px 0;font-size:13px"></div><table><thead><tr><th>Path</th><th>Type</th><th>Size</th><th>Perms</th><th>Version</th><th>Actions</th></tr></thead><tbody id="dfsTab"></tbody></table><div id="dfsBlockDetail" style="margin-top:12px"></div></div>
-<div class="card"><h3>File editor</h3><input id="fn" value="report.txt" placeholder="file name" style="margin-bottom:10px"><textarea id="fc" rows="6" placeholder="content…"></textarea><div class="row"><button onclick="fSave()">Save + Replicate</button><button class="ghost" onclick="fRead($('fn').value)">Open</button></div><small id="fsrc" style="margin-top:10px"></small></div>
-<div class="card"><h3>Files &amp; replicas</h3><table><thead><tr><th>Name</th><th>Version</th><th>Size</th><th>Replicas</th><th></th></tr></thead><tbody id="ftab"></tbody></table></div>
-<div class="card"><h3>Replica consistency &amp; conflict detection</h3><p class="mut">Saving from an older version is rejected as a CONFLICT. Corrupt a replica of the open file, verify, then repair.</p><div class="row" style="margin-top:0"><button class="ghost" onclick="ver(0)">Verify</button><button class="ghost" onclick="ver(1)">Corrupt a replica</button><button onclick="ver(2)">Repair</button></div><div id="verOut" style="margin-top:12px"></div></div></section>
+    <!-- Explainable Execution Trace Card -->
+    <div class="card">
+      <h3>Explainable Execution Trace — Scheduling Decision Rationale</h3>
+      <p class="mut">Deterministic explanations of why each process was selected, dispatched, or context-switched under the active scheduling policy.</p>
+      <div id="explainOut">
+        <p class="mut">Submit processes above to inspect deterministic scheduling decision rationale.</p>
+      </div>
+    </div>
 
-<section id="dead" class="view"><div class="card"><h3>Deadlock Detection — Wait-For Graph (WFG)</h3><div class="row" style="margin-top:0"><select id="dsc"><option value="circular">Circular wait (deadlock)</option><option value="chain">No cycle (safe)</option><option value="dual_cycle">Dual independent cycles</option></select><button onclick="dl()">Detect Scenario</button><button class="ghost" onclick="dlLive()">Live Cluster WFG</button></div><p class="mut">Directed edge P1 → P2 indicates process P1 is blocked waiting for a resource or lock held by P2.</p><div id="dlOut"></div></div>
-<div class="card"><h3>Deadlock Recovery &amp; Victim Selection</h3><div class="row" style="margin-top:0"><select id="recPolicy"><option value="youngest">Victim: Youngest Process</option><option value="least_work">Victim: Least Work Done</option><option value="lowest_priority">Victim: Lowest Priority</option></select><button onclick="dlRecover()">Terminate Victim &amp; Break Cycle</button><span id="dlCounts" class="mut" style="margin-left:12px"></span></div><div class="log" id="recLog" style="margin-top:12px"></div></div></section>
+    <div class="card">
+      <h3>Cluster Process Control Blocks (PCB Table)</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>PID</th>
+            <th>Job Type</th>
+            <th>Assigned Node</th>
+            <th>Burst</th>
+            <th>Priority</th>
+            <th>State</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="tasks"></tbody>
+      </table>
+    </div>
 
-<section id="cache" class="view"><div class="card"><h3>File &amp; Block Cache</h3><div class="row" style="margin:0 0 12px"><select id="cp"><option>LRU</option><option>FIFO</option></select><input id="cc" type="number" min="1" value="3"><button class="ghost" onclick="cfg()">Apply &amp; reset</button></div><div id="cstats"></div></div>
-<div class="card"><h3>Page Replacement &amp; Belady's Anomaly Demonstration</h3><p class="mut">Canonical reference string [1, 2, 3, 4, 1, 2, 5, 1, 2, 3, 4, 5]. FIFO page faults increase from 9 (3 frames) to 10 (4 frames), while stack algorithms (LRU, Optimal) monotonically improve.</p><div class="row" style="margin-top:0"><button onclick="beladyDemo()">Demonstrate Belady's Anomaly</button><button class="ghost" onclick="cacheReplay()">Replay Recorded Trace</button></div><div id="beladyOut" style="margin-top:12px"></div></div>
-<div class="card"><h3>Page Replacement Reference Simulator</h3><div class="row" style="margin-top:0"><input id="rs" value="7,0,1,2,0,3,0,4,2,3,0,3,2" style="min-width:260px"><input id="rf" type="number" value="3" min="1"><button onclick="sim()">Simulate (FIFO / LRU / Optimal)</button></div><div id="simOut" style="margin-top:12px"></div></div></section>
+    <div class="card">
+      <h3>Measured Execution Metrics vs Predicted Simulator</h3>
+      <div class="row" style="margin-top:0">
+        <button onclick="loadMetrics()">Refresh Measured Metrics</button>
+        <span id="csvNote" class="mut" style="margin-left:12px"></span>
+      </div>
+      <div id="metricsOut"></div>
+      <h4 style="margin-top:14px">Real Gantt Chart (Actual Execution Timestamps)</h4>
+      <div id="realGantt"></div>
+    </div>
+  </section>
 
-<section id="sync" class="view"><div class="card"><h3>Readers-Writers Lock (RWLock) &amp; Starvation Demonstration</h3><p class="mut">Courtois First Problem (Reader-Preference) starves writers under continuous reads. Courtois Second Problem (Writer-Preference) guarantees writer progress.</p><div class="row" style="margin-top:0"><select id="rwPref"><option value="writer">Writer-Preference (No Writer Starvation)</option><option value="reader">Reader-Preference (Writer Starvation Demo)</option></select><button onclick="rwDemo()">Test RWLock Starvation</button></div><div id="rwOut" style="margin-top:10px"></div></div>
-<div class="card"><h3>Dining Philosophers Problem (Deadlock vs Resource Ordering)</h3><p class="mut">5 Philosophers competing for 5 forks. Naive symmetric pick causes circular wait deadlock. Dijkstra's Resource Hierarchy breaks Circular Wait.</p><div class="row" style="margin-top:0"><select id="philMode"><option value="hierarchical">Hierarchical (Dijkstra - Deadlock Free)</option><option value="naive">Naive Symmetric (Deadlock Prone)</option></select><button onclick="philDemo()">Run Philosophers</button></div><div id="philOut" style="margin-top:10px"></div></div>
-<div class="card"><h3>Distributed Sync Engine (Dropbox-Lite)</h3><p class="mut">Folder synchronization across nodes with rsync-style incremental delta chunk transfers, SJF transfer scheduling, and Vector Clock conflict copies.</p><div class="row" style="margin-top:0"><button onclick="syncEngineDemo()">Run Dropbox-Lite Sync Demo</button><select id="syncPolicy" onchange="syncSetPolicy(this.value)"><option value="SJF">SJF (Smallest File First)</option><option value="FCFS">FCFS (Arrival Order)</option></select><button class="ghost" onclick="syncStatus()">Refresh Sync Status</button></div><div id="syncMetrics" class="row" style="margin:10px 0;font-size:13px"></div><div id="syncDemoOut" style="margin-top:10px"></div></div>
-<div class="card"><h3>Distributed Lock Manager (Named Leases &amp; Failover)</h3><p class="mut">Chubby/ZooKeeper style named locks with time-bounded leases. Automatic lease revocation upon holder node disconnect.</p><div class="row" style="margin-top:0"><input id="lockName" value="file:/report.txt" style="max-width:180px" placeholder="Lock Name"><input id="lockClient" value="node-1" style="max-width:120px" placeholder="Client ID"><input id="lockLease" type="number" value="15" style="max-width:80px" placeholder="Lease (s)"><button onclick="lockAcquire()">Acquire</button><button class="ghost" onclick="lockRelease()">Release</button><button class="ghost" onclick="lockStatus()">Refresh</button></div><table><thead><tr><th>Lock Name</th><th>Holder</th><th>Remaining Lease</th><th>Waiters Queue</th><th>Actions</th></tr></thead><tbody id="lockTab"></tbody></table></div>
-<div class="card"><h3>Real Ricart-Agrawala Mutual Exclusion over RPC</h3><p class="mut">Inter-node coordination over TCP-JSON with Lamport timestamps and deferred queues. Message complexity: exactly 2(N-1) messages per entry.</p><div class="row" style="margin-top:0"><button onclick="raClusterDemo()">Execute Real RA Protocol</button><button class="ghost" onclick="raComplexity()">2(N-1) Complexity Table</button></div><div id="raClusterOut" style="margin-top:12px"></div></div>
-<div class="card"><h3>Offline Ricart-Agrawala What-If Simulator</h3><p class="mut">Nodes that request the critical section at the same time:</p><div class="row" style="margin-top:0"><label><input type="checkbox" class="ra" value="node-1" checked> node-1</label><label><input type="checkbox" class="ra" value="node-2" checked> node-2</label><label><input type="checkbox" class="ra" value="node-3" checked> node-3</label><button onclick="ra()">Simulate</button></div><div id="raOut" style="margin-top:12px"></div></div>
-<div class="card"><h3>Semaphores, Monitors &amp; Race Condition Demos</h3><div class="row" style="margin-top:0"><button onclick="pc()">Producer–Consumer</button><button class="ghost" onclick="mx()">Mutex Race Demo</button><button class="ghost" onclick="raceDemo()">Storage Race Demo</button><button class="ghost" onclick="vmstatDemo()">VMStat Snapshot</button></div><div class="log" id="pcOut" style="margin-top:12px"></div></div></section>
+  <!-- 4. RESOURCE MANAGER -->
+  <section id="res" class="view">
+    <div class="card">
+      <h3>Banker's Algorithm — Deadlock Avoidance (Admission Control)</h3>
+      <p class="mut">
+        Dijkstra's Banker's Algorithm evaluates resource requests against cluster safety.
+        Safety condition: <code>Need[i][j] = Max[i][j] - Allocation[i][j] &le; Available[j]</code>.
+      </p>
+      <div class="row" style="margin-top:8px">
+        <button id="bToggle" class="ghost" onclick="toggleBanker()">Admission Banker: ON</button>
+        <button onclick="bInit()">Load Textbook Example</button>
+        <select id="bp"></select>
+        <input id="br" value="1,0,2" title="Request Vector [R1, R2, R3]" style="max-width:110px">
+        <button class="ghost" onclick="bReq()">Request Resources</button>
+      </div>
+      <div id="bExplanation" style="margin:10px 0;font-size:13px"></div>
+      <div id="bTable"></div>
+    </div>
+    <div class="card">
+      <h3>Cluster Model Resource Utilization (R1: CPU Cores · R2: Memory · R3: I/O Channels)</h3>
+      <p class="mut">Tracks logical resource allocations managed under the Banker's safety framework.</p>
+      <div id="util"></div>
+    </div>
+  </section>
 
-<section id="netp" class="view"><div class="card"><h3>Network / IPC Traffic — TCP Sockets &amp; gRPC HTTP/2</h3><p class="mut">Application layer traffic handled by the coordinator and worker nodes.</p><div id="net"></div></div>
-<div class="card"><h3>RPC &amp; IPC Benchmarks (OSDS Practical 9 &amp; 11)</h3><p class="mut">Compare serialized JSON over loopback TCP sockets vs binary Protocol Buffers over gRPC HTTP/2, and Zero-Copy Shared Memory.</p><div class="row" style="margin-top:0"><button onclick="runRpcBench()">Run RPC Benchmark (TCP vs gRPC)</button><button class="ghost" onclick="runIpcBench()">Run IPC Benchmark (Sockets vs Shm)</button><button class="ghost" onclick="loadGrpcMetrics()">Refresh gRPC Metrics</button></div><div id="rpcBenchOut" style="margin-top:12px"></div></div></section>
+  <!-- 5. DEADLOCK DETECTION -->
+  <section id="dead" class="view">
+    <div class="card">
+      <h3>Deadlock Detection — Wait-For Graph (WFG)</h3>
+      <p class="mut">Directed edge P<sub>i</sub> &rarr; P<sub>j</sub> indicates process P<sub>i</sub> is blocked waiting for a resource held by P<sub>j</sub>. Cycles in the WFG indicate deadlock.</p>
+      <div class="row" style="margin-top:0">
+        <select id="dsc">
+          <option value="circular">Circular Wait (Deadlock: P1 &rarr; P2 &rarr; P3 &rarr; P1)</option>
+          <option value="chain">No Cycle (Safe: P1 &rarr; P2 &rarr; P3)</option>
+          <option value="dual_cycle">Dual Independent Cycles (P1-P2 &amp; P3-P4)</option>
+        </select>
+        <button onclick="dl()">Detect Scenario</button>
+        <button class="ghost" onclick="dlLive()">Live Cluster WFG</button>
+      </div>
+      <div id="dlOut" style="margin-top:12px"></div>
+    </div>
+    <div class="card">
+      <h3>Deadlock Recovery &amp; Victim Selection</h3>
+      <p class="mut">Select an optimal victim process according to resource reclamation policy, terminate it, and cleanly break the circular wait cycle.</p>
+      <div class="row" style="margin-top:0">
+        <select id="recPolicy">
+          <option value="youngest">Victim: Youngest Process (Min Execution Time)</option>
+          <option value="least_work">Victim: Least Work Done</option>
+          <option value="lowest_priority">Victim: Lowest Priority</option>
+        </select>
+        <button onclick="dlRecover()">Terminate Victim &amp; Break Cycle</button>
+        <span id="dlCounts" class="mut" style="margin-left:12px"></span>
+      </div>
+      <div class="log" id="recLog" style="margin-top:12px"></div>
+    </div>
+  </section>
 
-<section id="dock" class="view">
-<div class="card"><h3>Docker Deployment &amp; Live Container Telemetry</h3><div class="row" style="margin-top:0"><span class="chip" id="dockMode">Mode: Process Cluster</span><span id="hostTele" class="mut" style="margin-left:12px">Host: Telemetry active</span><button class="ghost" onclick="loadDockerStatus()" style="margin-left:auto">Refresh Containers</button></div><table><thead><tr><th>Container</th><th>Node ID</th><th>Status</th><th>CPU</th><th>Memory Quota</th><th>Load</th><th>Done</th></tr></thead><tbody id="dockTab"></tbody></table></div>
-<div class="card"><h3>Chaos Engineering &amp; Failure Injection</h3><p class="mut">Simulate real-world cloud &amp; cluster failures: sudden crash, delayed heartbeat, network partition, and healing.</p><div class="row" style="margin-top:0"><select id="chaosNode"><option value="node-1">node-1</option><option value="node-2">node-2</option><option value="node-3">node-3</option></select><button onclick="injectChaos('kill')" style="background:#dc2626">Kill Node</button><button onclick="injectChaos('suspect')" class="ghost" style="color:#d97706;border-color:#d97706">Delay Heartbeat (Suspect)</button><button onclick="injectChaos('partition')" class="ghost">Partition Node</button><button onclick="injectChaos('heal')" style="background:#16a34a">Heal / Recover</button><button onclick="injectChaos('delay')" class="ghost">Inject 250ms Delay</button></div><div id="chaosOut" style="margin-top:12px"></div></div>
-<div class="card"><h3>Cgroup Memory Isolation &amp; OOM Killer Demo</h3><p class="mut">Verifies that a leaky/greedy process exceeding its cgroup memory limit is terminated without crashing the node or cluster.</p><div class="row" style="margin-top:0"><button onclick="runIsoDemo()">Run Memory Isolation Demo</button><span class="mut" style="margin-left:12px">Quota: 80 MB · Workload Demand: 140 MB</span></div><div id="isoOut" style="margin-top:12px"></div></div>
-</section>
+  <!-- 6. CACHE & PAGING -->
+  <section id="cache" class="view">
+    <div class="card">
+      <h3>Page Replacement Simulator (FIFO vs LRU vs Optimal)</h3>
+      <p class="mut">Evaluate page fault counts and hit ratios across standard OS page replacement algorithms for a shared reference string.</p>
+      <div class="row" style="margin-top:0">
+        <input id="rs" value="7,0,1,2,0,3,0,4,2,3,0,3,2" style="min-width:280px" placeholder="Page reference string">
+        <input id="rf" type="number" value="3" min="1" max="10" style="max-width:70px" title="Frame capacity">
+        <button onclick="sim()">Simulate</button>
+      </div>
+      <div id="simOut" style="margin-top:12px"></div>
+    </div>
 
-<section id="ev" class="view"><div class="card"><h3>Event Log — Lamport &amp; Vector Clock Order (current T = <span id="lt">0</span>)</h3><p class="mut">Events stamped with Lamport logical clock (T) and Fidge-Mattern Vector Clock (VC) for causal tracking.</p><div class="row" style="margin-top:0"><button onclick="vcDemo()">Demonstrate Concurrent Edits</button><button class="ghost" onclick="causalLog()">Detect Concurrent Event Pairs</button></div><div id="vcDemoOut" style="margin:10px 0"></div><div class="log tall" id="evAll"></div></div></section></main><div id="modal" class="modal" onclick="if(event.target==this)closeM()"><div class="card"><h3 id="mt"></h3><pre id="mb"></pre><p id="mm" class="mut"></p><div class="row"><button onclick="editFile()">Edit in Editor</button><button class="ghost" onclick="closeM()">Close</button></div></div></div><div id="toasts"></div><script src="/static/script.js"></script></body></html>
+    <div class="card">
+      <h3>Belady's Anomaly Demonstration</h3>
+      <p class="mut">
+        Canonical Reference String: <code>[1, 2, 3, 4, 1, 2, 5, 1, 2, 3, 4, 5]</code>.
+        FIFO page faults increase from 9 (3 frames) to 10 (4 frames), while stack algorithms (LRU, Optimal) monotonically improve.
+      </p>
+      <div class="row" style="margin-top:0">
+        <button onclick="beladyDemo()">Demonstrate Belady's Anomaly</button>
+        <button class="ghost" onclick="cacheReplay()">Replay Recorded Access Trace</button>
+      </div>
+      <div id="beladyOut" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h3>Distributed File &amp; Block Cache</h3>
+      <div class="row" style="margin:0 0 12px">
+        <select id="cp">
+          <option>LRU</option>
+          <option>FIFO</option>
+        </select>
+        <input id="cc" type="number" min="1" value="3" style="max-width:70px" title="Cache Capacity">
+        <button class="ghost" onclick="cfg()">Apply &amp; Reset</button>
+      </div>
+      <div id="cstats"></div>
+    </div>
+  </section>
+
+  <!-- 7. SYNCHRONIZATION -->
+  <section id="sync" class="view">
+    <div class="card">
+      <h3>Ricart-Agrawala Distributed Mutual Exclusion over RPC</h3>
+      <p class="mut">
+        Fully distributed mutual exclusion with zero centralized bottleneck.
+        Nodes exchange REQUEST and REPLY messages stamped with Lamport logical timestamps.
+        Message complexity: exactly <b>2(N-1)</b> messages per critical section entry.
+      </p>
+      <div class="row" style="margin-top:0">
+        <button onclick="raClusterDemo()">Execute Real RA Protocol</button>
+        <button class="ghost" onclick="raComplexity()">Message Complexity Table: 2(N-1)</button>
+      </div>
+      <div id="raClusterOut" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h3>Ricart-Agrawala Offline What-If Simulator</h3>
+      <p class="mut">Select nodes requesting the critical section simultaneously:</p>
+      <div class="row" style="margin-top:0">
+        <label><input type="checkbox" class="ra" value="node-1" checked> node-1</label>
+        <label><input type="checkbox" class="ra" value="node-2" checked> node-2</label>
+        <label><input type="checkbox" class="ra" value="node-3" checked> node-3</label>
+        <button onclick="ra()">Simulate Concurrent Entry</button>
+      </div>
+      <div id="raOut" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h3>Distributed Lock Manager (Named Leases &amp; Automatic Failover)</h3>
+      <p class="mut">Coordinated named resource locks with lease expiration and auto-revocation upon worker node disconnection.</p>
+      <div class="row" style="margin-top:0">
+        <input id="lockName" value="file:/report.txt" style="max-width:180px" placeholder="Lock Name">
+        <input id="lockClient" value="node-1" style="max-width:120px" placeholder="Client ID">
+        <input id="lockLease" type="number" value="15" style="max-width:80px" placeholder="Lease (s)">
+        <button onclick="lockAcquire()">Acquire</button>
+        <button class="ghost" onclick="lockRelease()">Release</button>
+        <button class="ghost" onclick="lockStatus()">Refresh</button>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Lock Name</th>
+            <th>Holder</th>
+            <th>Remaining Lease</th>
+            <th>Waiters Queue</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="lockTab"></tbody>
+      </table>
+    </div>
+
+    <!-- Collapsible Classical Concurrency Demonstrations -->
+    <details class="card" style="margin-top:16px">
+      <summary style="cursor:pointer;font-weight:600;color:var(--text-secondary);text-transform:uppercase;font-size:12px">
+        Classical Synchronization Demonstrations (Readers-Writers, Dining Philosophers, Mutex) &blacktriangledown;
+      </summary>
+      <div style="margin-top:14px">
+        <h4>Readers-Writers Lock (RWLock) &amp; Starvation Demonstration</h4>
+        <p class="mut">Courtois First Problem (Reader-Preference) starves writers under continuous reads. Courtois Second Problem (Writer-Preference) guarantees writer progress.</p>
+        <div class="row" style="margin-top:0">
+          <select id="rwPref">
+            <option value="writer">Writer-Preference (No Writer Starvation)</option>
+            <option value="reader">Reader-Preference (Writer Starvation Demo)</option>
+          </select>
+          <button onclick="rwDemo()">Test RWLock</button>
+        </div>
+        <div id="rwOut" style="margin-top:10px"></div>
+
+        <h4 style="margin-top:16px">Dining Philosophers Problem (Resource Ordering)</h4>
+        <p class="mut">5 Philosophers competing for 5 forks. Naive symmetric pick causes circular wait deadlock. Dijkstra's Resource Hierarchy breaks Circular Wait.</p>
+        <div class="row" style="margin-top:0">
+          <select id="philMode">
+            <option value="hierarchical">Hierarchical (Dijkstra - Deadlock Free)</option>
+            <option value="naive">Naive Symmetric (Deadlock Prone)</option>
+          </select>
+          <button onclick="philDemo()">Run Philosophers</button>
+        </div>
+        <div id="philOut" style="margin-top:10px"></div>
+
+        <h4 style="margin-top:16px">Semaphores, Monitors &amp; Storage Race Condition</h4>
+        <div class="row" style="margin-top:0">
+          <button onclick="pc()">Producer–Consumer</button>
+          <button class="ghost" onclick="mx()">Mutex Race Demo</button>
+          <button class="ghost" onclick="raceDemo()">Storage Race Demo</button>
+          <button class="ghost" onclick="vmstatDemo()">VMStat Snapshot</button>
+        </div>
+        <div class="log" id="pcOut" style="margin-top:12px"></div>
+      </div>
+    </details>
+  </section>
+
+  <!-- 8. DISTRIBUTED FILES -->
+  <section id="files" class="view">
+    <div class="card">
+      <h3>Distributed File System (DFS) Cluster Namespace</h3>
+      <p class="mut">Files are partitioned into 64 KB blocks with 2x pipeline replication across cluster worker nodes and SHA-256 integrity verification.</p>
+      <div class="row" style="margin-top:0">
+        <input id="dfsPath" value="/" style="max-width:240px" placeholder="/path">
+        <button onclick="dfsLs()">List Directory</button>
+        <input id="dfsMkdirPath" style="max-width:200px" placeholder="New dir (/datasets)">
+        <button class="ghost" onclick="dfsMkdir()">Mkdir</button>
+        <button class="ghost" onclick="dfsScrub(true)">Scrub &amp; Repair DFS</button>
+      </div>
+      <div id="dfsSummary" class="row" style="margin:10px 0;font-size:13px"></div>
+      <table>
+        <thead>
+          <tr>
+            <th>Path</th>
+            <th>Type</th>
+            <th>Size</th>
+            <th>Permissions</th>
+            <th>Version</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="dfsTab"></tbody>
+      </table>
+      <div id="dfsBlockDetail" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h3>Cluster File Editor &amp; Conflict Detection</h3>
+      <p class="mut">Demonstrates atomic write, multi-node replication, and optimistic concurrency version conflict rejection.</p>
+      <input id="fn" value="report.txt" placeholder="file name" style="margin-bottom:10px">
+      <textarea id="fc" rows="5" placeholder="content…"></textarea>
+      <div class="row">
+        <button onclick="fSave()">Save + Replicate</button>
+        <button class="ghost" onclick="fRead($('fn').value)">Open</button>
+      </div>
+      <small id="fsrc" style="margin-top:10px"></small>
+    </div>
+
+    <div class="card">
+      <h3>Cluster File Replica Inventory</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Version</th>
+            <th>Size</th>
+            <th>Replica Nodes</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="ftab"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h3>Replica Integrity Verification &amp; Self-Healing Repair</h3>
+      <p class="mut">Simulate bit-rot or replica corruption, verify checksums across nodes, and self-heal from valid replicas.</p>
+      <div class="row" style="margin-top:0">
+        <button class="ghost" onclick="ver(0)">Verify Checksums</button>
+        <button class="ghost" onclick="ver(1)" style="color:#d97706;border-color:#d97706">Corrupt Replica</button>
+        <button onclick="ver(2)">Self-Heal / Repair</button>
+      </div>
+      <div id="verOut" style="margin-top:12px"></div>
+    </div>
+  </section>
+
+  <!-- 9. NETWORK / IPC -->
+  <section id="netp" class="view">
+    <div class="card">
+      <h3>Cluster Network Traffic — Application Protocol Messages</h3>
+      <p class="mut">Real-time breakdown of TCP messages processed by coordinator and worker nodes.</p>
+      <div id="net"></div>
+    </div>
+
+    <div class="card">
+      <h3>Inter-Process Communication (IPC) Benchmark — Sockets vs Shared Memory</h3>
+      <p class="mut">OSDS Practical 9: Compares kernel-space TCP socket message passing with zero-copy POSIX shared memory.</p>
+      <div class="row" style="margin-top:0">
+        <button onclick="runIpcBench()">Run IPC Benchmark (Sockets vs Shm)</button>
+      </div>
+      <div id="rpcBenchOut" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card">
+      <h3>Remote Procedure Call (RPC) Benchmark — TCP-JSON vs gRPC HTTP/2</h3>
+      <p class="mut">OSDS Practical 11: Compares textual JSON over TCP stream sockets with binary Protocol Buffers over multiplexed HTTP/2.</p>
+      <div class="row" style="margin-top:0">
+        <button onclick="runRpcBench()">Run RPC Benchmark (TCP vs gRPC)</button>
+        <button class="ghost" onclick="loadGrpcMetrics()">Refresh gRPC Telemetry</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10. LAMPORT & EVENTS -->
+  <section id="ev" class="view">
+    <div class="card">
+      <h3>Lamport &amp; Vector Clock Event Ordering (Current Logical Time T = <span id="lt">0</span>)</h3>
+      <p class="mut">
+        Lamport Timestamps enforce a strict total order: <code>T = max(T_local, T_msg) + 1</code>.
+        Fidge-Mattern Vector Clocks track causal relationships and detect concurrent events (<code>A || B</code>).
+      </p>
+      <div class="row" style="margin-top:0">
+        <button onclick="vcDemo()">Demonstrate Concurrent Edits</button>
+        <button class="ghost" onclick="causalLog()">Detect Concurrent Event Pairs</button>
+      </div>
+      <div id="vcDemoOut" style="margin:10px 0"></div>
+      <div class="log tall" id="evAll"></div>
+    </div>
+  </section>
+
+  <!-- 11. FAULT TOLERANCE -->
+  <section id="fault" class="view">
+    <div class="card">
+      <h3>Worker Node Fault Tolerance &amp; Recovery Controller</h3>
+      <p class="mut">
+        Demonstrate heartbeat timeout failure detection, automatic task migration/rescheduling, lock lease revocation, and seamless node recovery.
+      </p>
+      <div class="row" style="margin-top:12px">
+        <label style="font-weight:600;margin-right:6px">Target Worker Node:</label>
+        <select id="chaosNode">
+          <option value="node-1">node-1</option>
+          <option value="node-2">node-2</option>
+          <option value="node-3">node-3</option>
+        </select>
+        <button onclick="injectChaos('kill')" style="background:#dc2626">Simulate Node Failure (Stop Node)</button>
+        <button onclick="injectChaos('suspect')" class="ghost" style="color:#d97706;border-color:#d97706">Simulate Heartbeat Delay (Suspect)</button>
+        <button onclick="injectChaos('heal')" style="background:#16a34a">Restore / Reconnect Node (Heal)</button>
+      </div>
+      <div id="chaosOut" style="margin-top:14px"></div>
+    </div>
+
+    <div class="card">
+      <h3>Failure Detection &amp; Consensus Protocol Specification</h3>
+      <table>
+        <thead>
+          <tr>
+            <th>Protocol Parameter</th>
+            <th>Configured Value</th>
+            <th>System Behavior &amp; Failover Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Heartbeat Period</b></td>
+            <td><code>2.0s</code></td>
+            <td>Worker nodes stream periodic heartbeat carrying active CPU load and local PID telemetry.</td>
+          </tr>
+          <tr>
+            <td><b>Suspect Threshold</b></td>
+            <td><code>&gt; 4.0s missed</code></td>
+            <td>Node flagged as <b>SUSPECT</b>. Coordinator marks node degraded and stops assigning new jobs.</td>
+          </tr>
+          <tr>
+            <td><b>Eviction / Offline Threshold</b></td>
+            <td><code>&gt; 6.0s missed</code></td>
+            <td>Node declared <b>OFFLINE</b>. Active tasks migrated to healthy nodes, held locks revoked, DFS replicas scrubbed.</td>
+          </tr>
+          <tr>
+            <td><b>Recovery Action</b></td>
+            <td>Immediate on reconnect</td>
+            <td>Worker re-registers with coordinator. Status returns to <b>ONLINE</b>, cluster capacity vector updated.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 10-Step Failure Recovery Demonstration Scenario -->
+    <details class="card" style="margin-top:16px" open>
+      <summary style="cursor:pointer;font-weight:600;color:var(--text-secondary);text-transform:uppercase;font-size:12px">
+        Repeatable 10-Step Node Failure &amp; Recovery Walkthrough Guide &blacktriangledown;
+      </summary>
+      <ol style="margin:12px 0 0 20px;padding:0;line-height:1.7;color:var(--text-secondary)">
+        <li>Open <b>Process Manager</b> and submit 4 tasks under <b>Round Robin</b>.</li>
+        <li>Switch to <b>System Overview</b>: Verify all 3 worker nodes are <b>ONLINE (3 / 3)</b> with active task loads.</li>
+        <li>Switch to <b>Fault Tolerance</b> and select <code>node-2</code>.</li>
+        <li>Click <b style="color:#ef4444">Simulate Node Failure (Stop Node)</b>.</li>
+        <li>Notice that the Coordinator immediately marks <code>node-2</code> as <b>OFFLINE</b>, and <b>Online Nodes</b> updates to <b>2 / 3</b>.</li>
+        <li>Observe the Recent Events timeline: Coordinator logs task migration from <code>node-2</code> to <code>node-1</code> or <code>node-3</code>.</li>
+        <li>Return to <b>Process Manager</b> and submit a new task: confirm it is assigned only to surviving nodes (<code>node-1</code> or <code>node-3</code>).</li>
+        <li>Return to <b>Fault Tolerance</b> and click <b style="color:#22c55e">Restore / Reconnect Node (Heal)</b> on <code>node-2</code>.</li>
+        <li>Coordinator recognizes <code>node-2</code> rejoining: status returns to <b>ONLINE</b>, and counter returns to <b>3 / 3</b>.</li>
+        <li>Verify in <b>Lamport &amp; Events</b> that the entire failure, failover, and recovery sequence was logged with causal timestamps.</li>
+      </ol>
+    </details>
+
+    <!-- Optional Docker & Isolation Section -->
+    <details class="card" style="margin-top:16px">
+      <summary style="cursor:pointer;font-weight:600;color:var(--text-secondary);text-transform:uppercase;font-size:12px">
+        Container Deployment &amp; Cgroup Memory Isolation Telemetry (Optional) &blacktriangledown;
+      </summary>
+      <div style="margin-top:14px">
+        <div class="row" style="margin-top:0">
+          <span class="chip" id="dockMode">Mode: Process Cluster</span>
+          <span id="hostTele" class="mut" style="margin-left:12px">Host: Telemetry active</span>
+          <button class="ghost" onclick="loadDockerStatus()" style="margin-left:auto">Refresh Containers</button>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Container</th>
+              <th>Node ID</th>
+              <th>Status</th>
+              <th>CPU</th>
+              <th>Memory Quota</th>
+              <th>Load</th>
+              <th>Done</th>
+            </tr>
+          </thead>
+          <tbody id="dockTab"></tbody>
+        </table>
+        <h4 style="margin-top:16px">Cgroup Memory Isolation &amp; OOM Killer Demo</h4>
+        <p class="mut">Demonstrates that a greedy process exceeding its configured memory quota is terminated without compromising cluster stability.</p>
+        <div class="row" style="margin-top:0">
+          <button onclick="runIsoDemo()">Run Memory Isolation Demo</button>
+          <span class="mut" style="margin-left:12px">Quota: 80 MB · Demand: 140 MB</span>
+        </div>
+        <div id="isoOut" style="margin-top:12px"></div>
+      </div>
+    </details>
+  </section>
+</main>
+
+<div id="modal" class="modal" onclick="if(event.target==this)closeM()">
+  <div class="card">
+    <h3 id="mt"></h3>
+    <pre id="mb"></pre>
+    <p id="mm" class="mut"></p>
+    <div class="row">
+      <button onclick="editFile()">Edit in Editor</button>
+      <button class="ghost" onclick="closeM()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<script src="/static/script.js"></script>
+</body>
+</html>

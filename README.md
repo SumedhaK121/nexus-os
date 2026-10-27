@@ -83,11 +83,32 @@ pip install -r requirements.txt
 ```
 
 ### 4.2 Start the Complete Cluster
-Launch the Coordinator, 3 worker nodes, and the web Control Center with one command:
+
+#### Option A: Single-Command Master Launcher (Recommended)
+Launch the Coordinator, 3 worker nodes, and the web Control Center simultaneously with one command:
 ```bash
 python app.py
 ```
 Open **[http://localhost:8080](http://localhost:8080)** in your browser.
+
+#### Option B: Multi-Terminal Startup (5 Independent Processes)
+For demonstrations requiring separate terminal log outputs:
+```bash
+# Terminal 1 - Coordinator Control Plane (:9000)
+python -m coordinator.main 9000
+
+# Terminal 2 - Worker Node 1
+python -m nodes.node node-1 9000
+
+# Terminal 3 - Worker Node 2
+python -m nodes.node node-2 9000
+
+# Terminal 4 - Worker Node 3
+python -m nodes.node node-3 9000
+
+# Terminal 5 - Web Dashboard (:8080)
+python dashboard/app.py 8080 9000
+```
 
 ### 4.3 Run the Automated "Day in the Lab" Demonstration
 Experience the complete 8-scene automated walkthrough:
@@ -129,12 +150,27 @@ Verify that a leaky process is intercepted and terminated cleanly with exit code
 python demo/isolation_demo.py 80
 ```
 
-### 5.4 Chaos Engineering & Fault Injection
-Inject failures into cluster nodes:
+### 5.4 Worker Node Fault Tolerance & Failure Recovery
+
+NEXUS-OS implements a 3-state failure detector (`ONLINE` &rarr; `SUSPECT` &rarr; `OFFLINE`) with automated task migration, lock revocation, and self-healing DFS re-replication.
+
+#### Live 10-Step Failure & Recovery Demonstration Scenario:
+1. **Start Cluster**: Launch `python app.py` and navigate to `http://localhost:8080`.
+2. **Submit Tasks**: Go to **Process Manager** and submit 4 tasks under **Round Robin**.
+3. **Verify Health**: In **System Overview**, confirm all nodes are **ONLINE (3 / 3)** with active task loads.
+4. **Inject Failure**: Go to **Fault Tolerance** (or run `python tools/chaos.py kill node-2`).
+5. **Detect Failure**: Within 2 heartbeat cycles, Coordinator marks `node-2` as **OFFLINE** (Online Nodes updates to `2 / 3`).
+6. **Observe Task Migration**: Tasks assigned to `node-2` are automatically migrated to `node-1` or `node-3`.
+7. **Verify Admission Exclusions**: New tasks submitted to the cluster route exclusively to surviving nodes.
+8. **Heal / Reconnect Node**: Click **Restore / Reconnect Node** (or run `python tools/chaos.py heal node-2`).
+9. **Cluster Rebalancing**: `node-2` re-registers, returning status to **ONLINE (3 / 3)** and re-enabling job allocations.
+10. **Audit Events**: In **Lamport & Events**, observe the dual-timestamped audit trace of the failure, failover, and rejoin events.
+
+#### CLI Failure Injection Commands:
 ```bash
-python tools/chaos.py kill node-1        # Crash node and trigger task migration
-python tools/chaos.py suspect node-2     # Simulate delayed heartbeats
-python tools/chaos.py heal node-1        # Rejoin node and restore cluster capacity
+python tools/chaos.py kill node-2        # Crash node and trigger task migration
+python tools/chaos.py suspect node-2     # Simulate delayed heartbeats (>4s)
+python tools/chaos.py heal node-2        # Reconnect node and restore cluster capacity
 ```
 
 ### 5.5 Dining Philosophers Simulation

@@ -111,6 +111,8 @@ def register(coord):
             if action == "kill":
                 if n:
                     n["status"] = "OFFLINE"
+                    n["simulated_down"] = True
+                    n["simulated_suspect"] = False
                     conn = n.get("conn")
                     if conn:
                         try:
@@ -126,6 +128,8 @@ def register(coord):
             elif action == "suspect":
                 if n:
                     n["status"] = "SUSPECT"
+                    n["simulated_suspect"] = True
+                    n["simulated_suspect_time"] = time.time()
                     n["last_seen"] = time.time() - 4.5
                 if hasattr(c, "node_mgr"):
                     c.node_mgr.mark_suspect(node_id)
@@ -144,6 +148,8 @@ def register(coord):
             elif action in ("heal", "restore"):
                 if n:
                     n["status"] = "ONLINE"
+                    n["simulated_down"] = False
+                    n["simulated_suspect"] = False
                     n["last_seen"] = time.time()
                 if hasattr(c, "node_mgr"):
                     info = c.node_mgr.nodes.get(node_id)

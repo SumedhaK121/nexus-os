@@ -599,3 +599,29 @@ pre {
 .toast.bad {
   border-left-color: #dc2626;
 }
+
+/* Collapsible details styling */
+details.card {
+  transition: all 0.2s ease-in-out;
+}
+details summary {
+  user-select: none;
+  outline: none;
+  padding: 4px 0;
+}
+details summary:hover {
+  color: #ffffff;
+}
+details[open] summary {
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 8px;
+}
+.chart-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60px;
+  color: var(--text-muted);
+  font-size: 12px;
+}

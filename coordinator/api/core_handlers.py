@@ -50,6 +50,14 @@ def register(coord):
         with c.lock:
             n = c.nodes.get(node_id)
             if n:
+                if n.get("simulated_down"):
+                    return None
+                if n.get("simulated_suspect"):
+                    if time.time() - n.get("simulated_suspect_time", 0) < 6.0:
+                        n["status"] = "SUSPECT"
+                        return None
+                    else:
+                        n["simulated_suspect"] = False
                 n.update(last_seen=time.time(), cpu=m.get("cpu", 0), status="ONLINE")
                 if "mem" in m:
                     n["mem"] = m["mem"]
@@ -83,20 +91,50 @@ def register(coord):
 
         assigned = {}
         now = time.time()
+        if not hasattr(c, "task_explanations"):
+            c.task_explanations = {}
+
         with c.lock:
             for pid in order:
                 nid = pick_node(c.nodes, online)
                 burst = by_pid[pid].get("burst", 1)
-                c.nodes[nid]["load"] += burst
+                prio = by_pid[pid].get("priority", 1)
+                arr = by_pid[pid].get("arrival", 0)
+
+                # Generate factual explainable execution trace reason
+                if algo == "sjf":
+                    reason = f"{pid} selected because its burst time ({burst}s) was the shortest among all ready tasks."
+                elif algo == "srtf":
+                    reason = f"{pid} selected because its remaining burst ({burst}s) was the shortest at scheduling decision time."
+                elif algo in ("priority", "priority_aging"):
+                    reason = f"{pid} selected because it had the highest priority level (priority={prio}) among ready tasks."
+                elif algo == "rr":
+                    reason = f"{pid} allocated execution time slice (quantum={quantum}s) as head of circular ready queue."
+                else:
+                    reason = f"{pid} scheduled in first-come first-served arrival order (arrival={arr}s)."
+
                 c.tasks[pid] = {
                     "node": nid,
-                    "state": "Running",
+                    "state": "Waiting",
                     "burst": burst,
                     "submit_time": now,
                     "start_time": None,
+                    "end_time": None,
                     "job_type": by_pid[pid].get("job_type", "sim"),
                     "args": by_pid[pid].get("args", []),
-                    "priority": by_pid[pid].get("priority", 1),
+                    "priority": prio,
+                    "arrival": arr,
+                    "algo": algo.upper(),
+                    "reason": reason,
+                }
+                c.task_explanations[pid] = {
+                    "pid": pid,
+                    "algo": algo.upper(),
+                    "burst": burst,
+                    "priority": prio,
+                    "arrival": arr,
+                    "node": nid,
+                    "reason": reason,
                 }
                 assigned[pid] = nid
                 if hasattr(c, "proc_mgr"):
@@ -110,12 +148,11 @@ def register(coord):
                             job_type=by_pid[pid].get("job_type", "sim"),
                             args=by_pid[pid].get("args", []),
                             burst=burst,
-                            priority=by_pid[pid].get("priority", 1),
+                            priority=prio,
                         )
                     pcb.node = nid
                     try:
                         pcb.set_state("READY")
-                        pcb.set_state("RUNNING")
                     except ValueError:
                         pass
 
@@ -128,13 +165,14 @@ def register(coord):
                     "ts": c.clock.tick(),
                 }
                 c.nodes[nid]["conn"].send(exec_msg)
-                c.log("scheduler", f"{pid} -> {nid} ({by_pid[pid].get('job_type', 'sim')})")
+                c.log("scheduler", f"{pid} -> {nid} ({by_pid[pid].get('job_type', 'sim')}): {reason}")
 
         return {
             "type": "SUBMITTED",
             "assigned": assigned,
             "metrics": result["avg"],
             "gantt": result["gantt"],
+            "explanations": c.task_explanations,
         }
 
     @coord.handler("SUBMIT_TRACE")
@@ -159,17 +197,21 @@ def register(coord):
     @coord.handler("TASK_STARTED")
     def _started(c, ctx, m):
         pid = m["pid"]
+        node_id = ctx.node_id or m.get("node_id")
         now = time.time()
         with c.lock:
             if pid in c.tasks:
                 if c.tasks[pid]["start_time"] is None:
                     c.tasks[pid]["start_time"] = now
                 c.tasks[pid]["state"] = "Running"
+            if node_id and node_id in c.nodes:
+                c.nodes[node_id]["load"] = max(0, c.nodes[node_id].get("load", 0) + 1)
             if hasattr(c, "proc_mgr"):
-                pcb = c.proc_mgr.get(pid)
-                if pcb and pcb.start_time is None:
-                    pcb.start_time = now
-        c.log(m.get("node_id", "node"), f"started execution of {pid}")
+                try:
+                    c.proc_mgr.transition(pid, "RUNNING")
+                except Exception:
+                    pass
+        c.log(node_id or "node", f"started execution of {pid}")
         return None
 
     @coord.handler("TASK_DONE")
@@ -208,8 +250,8 @@ def register(coord):
             })
 
             if node_id and node_id in c.nodes:
-                c.nodes[node_id]["load"] = max(0, c.nodes[node_id]["load"] - task.get("burst", 0))
-                c.nodes[node_id]["done"] += 1
+                c.nodes[node_id]["load"] = max(0, c.nodes[node_id].get("load", 1) - 1)
+                c.nodes[node_id]["done"] = c.nodes[node_id].get("done", 0) + 1
 
             if hasattr(c, "proc_mgr"):
                 try:
@@ -415,4 +457,5 @@ def register(coord):
                 "banker": banker_data,
                 "policy": getattr(c, "active_policy", "fcfs"),
                 "metrics_count": len(getattr(c, "measured_metrics", [])),
+                "explanations": getattr(c, "task_explanations", {}),
             }

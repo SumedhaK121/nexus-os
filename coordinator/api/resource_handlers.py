@@ -63,13 +63,19 @@ def register(coord):
     def _dd(c, ctx, m):
         scenario = m.get("scenario", "circular")
         wf = deadlock_detector.SCENARIOS.get(scenario, deadlock_detector.SCENARIOS["circular"])
-        cyc = deadlock_detector.detect(wf)
+        c.active_wfg = {k: list(v) for k, v in wf.items()}
+        cyc = deadlock_detector.detect(c.active_wfg)
         c.log("deadlock", f"Scenario {scenario}: cycle {' -> '.join(cyc)} DETECTED" if cyc else "no cycle, safe")
-        return {"type": "DEADLOCK_RESULT", "wait_for": wf, "cycle": cyc, "deadlock": bool(cyc)}
+        return {"type": "DEADLOCK_RESULT", "wait_for": c.active_wfg, "cycle": cyc, "deadlock": bool(cyc)}
 
     @coord.handler("DEADLOCK_DETECT")
     def _detect_live(c, ctx, m):
-        wf = c.res_mgr.get_wait_for_graph() if hasattr(c, "res_mgr") else {}
+        live_wf = c.res_mgr.get_wait_for_graph() if hasattr(c, "res_mgr") else {}
+        if live_wf:
+            c.active_wfg = {k: list(v) for k, v in live_wf.items()}
+        elif not hasattr(c, "active_wfg") or not c.active_wfg:
+            c.active_wfg = {}
+        wf = c.active_wfg
         cycles = deadlock_detector.find_all_cycles(wf)
         primary_cycle = cycles[0] if cycles else []
         c.log("deadlock", f"Live detection: {len(cycles)} cycle(s) found: {cycles}")
@@ -86,32 +92,59 @@ def register(coord):
     @coord.handler("DEADLOCK_RECOVER")
     def _recover(c, ctx, m):
         policy = m.get("policy", "youngest")
-        if not hasattr(c, "res_mgr"):
-            return {"type": "ERROR", "error": "Resource manager unavailable"}
+        wf = getattr(c, "active_wfg", None)
+        if wf is None and hasattr(c, "res_mgr"):
+            live_wf = c.res_mgr.get_wait_for_graph()
+            if live_wf:
+                c.active_wfg = {k: list(v) for k, v in live_wf.items()}
+                wf = c.active_wfg
+        if not wf:
+            return {"type": "RECOVERY_RESULT", "recovered": False, "reason": "No active deadlock cycles detected"}
 
-        wf = c.res_mgr.get_wait_for_graph()
         cycles = deadlock_detector.find_all_cycles(wf)
         if not cycles:
             return {"type": "RECOVERY_RESULT", "recovered": False, "reason": "No active deadlock cycles detected"}
 
         proc_table = c.proc_mgr.list_all() if hasattr(c, "proc_mgr") else c.tasks
-        victim = c.res_mgr.select_victim(cycles[0], proc_table, policy)
+        victim = c.res_mgr.select_victim(cycles[0], proc_table, policy) if hasattr(c, "res_mgr") else None
         if not victim:
-            return {"type": "ERROR", "error": "Failed to select victim from cycle"}
+            # Deterministic victim selection from cycle nodes based on policy
+            cycle_nodes = [node for node in cycles[0][:-1] if node in wf]
+            if not cycle_nodes:
+                cycle_nodes = list(wf.keys())
+            if policy == "youngest":
+                victim = cycle_nodes[-1]
+            elif policy == "lowest_priority":
+                victim = min(cycle_nodes, key=lambda p: proc_table.get(p, {}).get("priority", 1))
+            else:  # least_work
+                victim = min(cycle_nodes, key=lambda p: proc_table.get(p, {}).get("burst", 1))
 
-        # Kill victim to release resources
-        kill_fn = c.handlers.get("PROC_KILL")
-        if kill_fn:
-            kill_fn(c, ctx, {"pid": victim})
-        c.res_mgr.release(victim)
-        c.res_mgr.deadlocks_resolved += 1
-        record = {
-            "time": c.clock.t,
-            "victim": victim,
-            "policy": policy,
-            "cycle": cycles[0],
-        }
-        c.res_mgr.recovery_log.append(record)
+        # Break the cycle in the authoritative active WFG
+        wf.pop(victim, None)
+        for deps in wf.values():
+            if isinstance(deps, list) and victim in deps:
+                deps.remove(victim)
+            elif isinstance(deps, set) and victim in deps:
+                deps.discard(victim)
+
+        # Re-detect cycles to confirm cycle broken
+        remaining_cycles = deadlock_detector.find_all_cycles(wf)
+
+        # Release in resource manager and update stats if active
+        if hasattr(c, "res_mgr"):
+            kill_fn = c.handlers.get("PROC_KILL")
+            if kill_fn:
+                kill_fn(c, ctx, {"pid": victim})
+            c.res_mgr.release(victim)
+            c.res_mgr.deadlocks_resolved += 1
+            record = {
+                "time": c.clock.t,
+                "victim": victim,
+                "policy": policy,
+                "cycle": cycles[0],
+            }
+            c.res_mgr.recovery_log.append(record)
+
         c.log("deadlock", f"Deadlock resolved: terminated victim {victim} (policy: {policy})")
 
         return {
@@ -120,5 +153,8 @@ def register(coord):
             "victim": victim,
             "policy": policy,
             "cycle": cycles[0],
-            "resolved_count": c.res_mgr.deadlocks_resolved,
+            "remaining_cycles": remaining_cycles,
+            "wait_for": wf,
+            "deadlock": bool(remaining_cycles),
+            "resolved_count": getattr(c.res_mgr, "deadlocks_resolved", 1) if hasattr(c, "res_mgr") else 1,
         }
