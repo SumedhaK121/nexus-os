@@ -17,12 +17,17 @@ let hist = [];
 let lastExplanations = {};
 let rows = [["P1", 0, 5, 2], ["P2", 1, 3, 1], ["P3", 2, 8, 3], ["P4", 3, 2, 1]];
 
+let _dlInitialized = false;
 document.querySelectorAll("nav a").forEach(a => a.onclick = () => {
   document.querySelectorAll(".view, nav a").forEach(e => e.classList.remove("on"));
   a.classList.add("on");
   const targetView = $(a.dataset.v);
   if (targetView) targetView.classList.add("on");
   $("title").textContent = a.textContent.trim();
+  if (a.dataset.v === "dead" && !_dlInitialized) {
+    dl();
+    _dlInitialized = true;
+  }
 });
 
 function drawRows() {
