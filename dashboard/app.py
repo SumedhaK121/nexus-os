@@ -20,7 +20,7 @@ class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def _s(self, code, body, ct="application/json"):
         b = body if isinstance(body, bytes) else body.encode()
-        self.send_response(code); self.send_header("Content-Type", ct); self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+        self.send_response(code); self.send_header("Content-Type", ct); self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-cache, no-store, must-revalidate"); self.send_header("Pragma", "no-cache"); self.send_header("Expires", "0"); self.end_headers(); self.wfile.write(b)
     def do_GET(self):
         if self.path == "/api/status": return self._s(200, json.dumps(call({"type": "STATUS"})))
         n = os.path.basename(self.path.split("?")[0]); n = n if n in ("style.css", "script.js") else "index.html"
