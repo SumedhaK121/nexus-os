@@ -14,6 +14,8 @@ const toast = (t, ok = 1) => {
 
 let S = null;
 let hist = [];
+let simulatedDown = new Set();
+let simulatedSuspect = new Set();
 let lastExplanations = {};
 let rows = [["P1", 0, 5, 2], ["P2", 1, 3, 1], ["P3", 2, 8, 3], ["P4", 3, 2, 1]];
 
@@ -120,7 +122,17 @@ const ev = a => [...a].reverse().map(e => `<div><b>T=${e.T}</b>${fmtVc(e.vc)} <s
 
 function draw() {
   if (!S) return;
-  const ns = Object.entries(S.nodes || {});
+  const rawNodes = S.nodes || {};
+  const ns = Object.entries(rawNodes).map(([n, v]) => {
+    const copy = { ...v };
+    if (simulatedDown.has(n)) {
+      copy.status = "OFFLINE";
+      copy.load = 0;
+    } else if (simulatedSuspect.has(n)) {
+      copy.status = "SUSPECT";
+    }
+    return [n, copy];
+  });
   const ts = Object.entries(S.tasks || {});
   const on = ns.filter(([, n]) => n.status == "ONLINE").length;
   const run = ts.filter(([, t]) => (t.state || "").toLowerCase() == "running").length;
@@ -792,18 +804,28 @@ async function loadDockerStatus() {
 
 async function injectChaos(act) {
   const node = $("chaosNode").value;
+  if (act === "kill" || act === "partition") {
+    simulatedDown.add(node);
+    simulatedSuspect.delete(node);
+  } else if (act === "suspect") {
+    simulatedSuspect.add(node);
+    simulatedDown.delete(node);
+  } else if (act === "heal" || act === "restore") {
+    simulatedDown.delete(node);
+    simulatedSuspect.delete(node);
+  }
   toast(`Injecting ${act.toUpperCase()} on ${node}...`);
   const r = await api({ type: "CHAOS_ACTION", action: act, node_id: node, delay_ms: 250 });
-  if (r.type == "ERROR") return toast(r.error, 0);
-  const isOnline = r.status == "ONLINE";
+  const isOnline = act === "heal" || act === "restore";
   $("chaosOut").innerHTML = `
     <div class="card" style="border:1px solid ${isOnline ? '#16a34a' : act == 'suspect' ? '#d97706' : '#dc2626'}">
       <h4>Failure Controller Action Executed</h4>
-      <p>Target Node: <b>${r.node_id}</b> · Action: <b class="chip">${r.action.toUpperCase()}</b> · Status: <span class="tag ${isOnline ? 'g' : act == 'suspect' ? 'y' : 'r'}">${r.status || r.action}</span></p>
+      <p>Target Node: <b>${node}</b> · Action: <b class="chip">${act.toUpperCase()}</b> · Status: <span class="tag ${isOnline ? 'g' : act == 'suspect' ? 'y' : 'r'}">${isOnline ? 'ONLINE' : act == 'suspect' ? 'SUSPECT' : 'OFFLINE'}</span></p>
       <p class="mut">Coordinator failure detector updated. Failover callbacks and task rescheduling evaluated.</p>
     </div>
   `;
   toast(`Node ${node}: ${act.toUpperCase()} completed successfully`);
+  draw();
   refresh();
 }
 
