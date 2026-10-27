@@ -4,7 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from communication.tcp_client import Client
 CP = int(sys.argv[1]) if len(sys.argv) > 1 else 9000
-WP = int(sys.argv[2]) if len(sys.argv) > 2 else 8080
+WP = int(sys.argv[2]) if len(sys.argv) > 2 else int(os.environ.get("PORT", 8080))
 ST = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 _l, _c = threading.Lock(), None
 def call(msg):
